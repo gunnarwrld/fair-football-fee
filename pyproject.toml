@@ -48,6 +48,9 @@ include = ["src*"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-v --tb=short"
+markers = [
+    "data: tests that validate local gitignored Parquet lakehouse artifacts (skipped on clean clone)",
+]
 
 [tool.ruff]
 line-length = 100

@@ -14,10 +14,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     redis_cache_ttl_seconds: int = 3600
     redis_lock_timeout_seconds: int = 5
+    metadata_refresh_seconds: int = 60
 
-    # Active model version fallback; data_version is stamped by ingestion into
-    # data/raw/MANIFEST.json and read from player_current_features at API startup.
-    model_version: str = "v1.0.0"
+    # Both active model_version and data_version are resolved from the database
+    # (model_versions.is_active and player_current_features.data_version) and
+    # refreshed periodically (~60s) rather than hardcoded in config.
 
     data_dir: Path = Path("data")
     artifacts_dir: Path = Path("artifacts")
