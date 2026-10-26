@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing & Tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environment
+.env
+.env.local
+
+# Parquet Lakehouse Data (keep directory structure via .gitkeep)
+data/raw/*.parquet
+data/raw/*.csv
+data/raw/*.gz
+data/clean/*.parquet
+data/features/*.parquet
+!data/**/.gitkeep
+
+# Model Binary Artifacts (keep metadata & model cards tracked)
+artifacts/**/*.ubj
+artifacts/**/*.joblib
+artifacts/**/*.pkl
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# OS
+.DS_Store
+Thumbs.db
