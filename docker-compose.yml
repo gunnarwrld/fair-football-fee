@@ -42,7 +42,6 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-fff_user}:${POSTGRES_PASSWORD:-fff_pass}@postgres:5432/${POSTGRES_DB:-fair_football_fee}
       REDIS_URL: redis://redis:6379/0
-      MODEL_VERSION: ${MODEL_VERSION:-v1.0.0}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:

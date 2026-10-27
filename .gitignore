@@ -21,7 +21,8 @@ htmlcov/
 .env
 .env.local
 
-# Parquet Lakehouse Data (keep directory structure via .gitkeep)
+# Parquet Lakehouse Data (keep directory structure via .gitkeep and JSON reports)
+data/raw/sources/
 data/raw/*.parquet
 data/raw/*.csv
 data/raw/*.gz

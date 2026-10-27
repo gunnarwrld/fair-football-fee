@@ -1,0 +1,617 @@
+{
+  "licenses": {
+    "dcaribou/transfermarkt-datasets": {
+      "license_file_present": true,
+      "spdx_id": "CC0-1.0",
+      "license_name": "Creative Commons Zero v1.0 Universal",
+      "header_excerpt": "Creative Commons Legal Code / CC0 1.0 Universal"
+    },
+    "salimt/football-datasets": {
+      "license_file_present": false,
+      "spdx_id": null,
+      "license_name": null,
+      "pinned_repo_commit_sha": "da9227e1f42baf74561324290dbf1ad2e3c00edd",
+      "pinned_profiles_commit_sha": "62ca05786a63f65ebf1220eaa8de6a4ef29abf69",
+      "pinned_profiles_snapshot_date": "2025-10-18",
+      "note": "No LICENSE file in GitHub repository (GitHub API license=null -> all rights reserved by default under copyright law, despite third-party mirrors claiming MIT/CC0). Raw and derived Parquet files must remain gitignored and raw injury records must never be exposed through the API."
+    }
+  },
+  "pinned_sources": {
+    "dcaribou/competitions.csv.gz": {
+      "url": "https://pub-e682421888d945d684bcae8890b0ec20.r2.dev/data/competitions.csv.gz",
+      "sha256": "8924ddfbc0e9989f4a42a3c32ebb6faa671614625086d7fa84353f955352ea88",
+      "expected_sha256": "8924ddfbc0e9989f4a42a3c32ebb6faa671614625086d7fa84353f955352ea88",
+      "pin_verified": true,
+      "size_bytes": 2242,
+      "rows_read": 65,
+      "csv_reject_count": 0
+    },
+    "dcaribou/clubs.csv.gz": {
+      "url": "https://pub-e682421888d945d684bcae8890b0ec20.r2.dev/data/clubs.csv.gz",
+      "sha256": "aa57ab56e87faffaea1e8697439a32caf10116d8f2f2dfb3a57193c0bb1d641b",
+      "expected_sha256": "aa57ab56e87faffaea1e8697439a32caf10116d8f2f2dfb3a57193c0bb1d641b",
+      "pin_verified": true,
+      "size_bytes": 51281,
+      "rows_read": 796,
+      "csv_reject_count": 0
+    },
+    "dcaribou/players.csv.gz": {
+      "url": "https://pub-e682421888d945d684bcae8890b0ec20.r2.dev/data/players.csv.gz",
+      "sha256": "d22e407981d5b51a79bf8ff59835729f3526f7dc3495a6d8ed2f852ed2e86403",
+      "expected_sha256": "d22e407981d5b51a79bf8ff59835729f3526f7dc3495a6d8ed2f852ed2e86403",
+      "pin_verified": true,
+      "size_bytes": 4389958,
+      "rows_read": 50149,
+      "csv_reject_count": 0
+    },
+    "dcaribou/player_valuations.csv.gz": {
+      "url": "https://pub-e682421888d945d684bcae8890b0ec20.r2.dev/data/player_valuations.csv.gz",
+      "sha256": "608e32e5ad2231074f3505c469ad727be66d7e6efda6af918afd85379439631d",
+      "expected_sha256": "608e32e5ad2231074f3505c469ad727be66d7e6efda6af918afd85379439631d",
+      "pin_verified": true,
+      "size_bytes": 7197935,
+      "rows_read": 656301,
+      "csv_reject_count": 0
+    },
+    "dcaribou/appearances.csv.gz": {
+      "url": "https://pub-e682421888d945d684bcae8890b0ec20.r2.dev/data/appearances.csv.gz",
+      "sha256": "e096c2b158fc3d52c4550526c4d4850dd62f31007652f4bcae112eadb1646802",
+      "expected_sha256": "e096c2b158fc3d52c4550526c4d4850dd62f31007652f4bcae112eadb1646802",
+      "pin_verified": true,
+      "size_bytes": 45253638,
+      "rows_read": 1894350,
+      "csv_reject_count": 0
+    },
+    "dcaribou/games.csv.gz": {
+      "url": "https://pub-e682421888d945d684bcae8890b0ec20.r2.dev/data/games.csv.gz",
+      "sha256": "142561989017d379bcf9e72bad0b87e0996bae0e7b710ebb3def9255f464c741",
+      "expected_sha256": "142561989017d379bcf9e72bad0b87e0996bae0e7b710ebb3def9255f464c741",
+      "pin_verified": true,
+      "size_bytes": 4995595,
+      "rows_read": 88958,
+      "csv_reject_count": 0
+    },
+    "dcaribou/transfers.csv.gz": {
+      "url": "https://pub-e682421888d945d684bcae8890b0ec20.r2.dev/data/transfers.csv.gz",
+      "sha256": "90326983daf7e6ac7aabdfe62b90936d9bf1dd2171e53dec75c3751eb1620a83",
+      "expected_sha256": "90326983daf7e6ac7aabdfe62b90936d9bf1dd2171e53dec75c3751eb1620a83",
+      "pin_verified": true,
+      "size_bytes": 5809514,
+      "rows_read": 175165,
+      "csv_reject_count": 0
+    },
+    "salimt/player_profiles.csv": {
+      "url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_profiles/player_profiles.csv",
+      "sha256": "7ef9afbacf97577d099f21a0ef0ea0d46381bd4806a119f095b9562762a20096",
+      "expected_sha256": "7ef9afbacf97577d099f21a0ef0ea0d46381bd4806a119f095b9562762a20096",
+      "pin_verified": true,
+      "size_bytes": 26380409,
+      "commit_sha": "62ca05786a63f65ebf1220eaa8de6a4ef29abf69",
+      "snapshot_date": "2025-10-18",
+      "rows_read": 92671,
+      "csv_reject_count": 0
+    },
+    "salimt/player_market_value.csv": {
+      "url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_market_value/player_market_value.csv",
+      "sha256": "e9e1868c883f0f40559127a407f5755c6a7f2e1ded1b4cec842d9185c4edb984",
+      "expected_sha256": "e9e1868c883f0f40559127a407f5755c6a7f2e1ded1b4cec842d9185c4edb984",
+      "pin_verified": true,
+      "size_bytes": 23873747,
+      "commit_sha": "da9227e1f42baf74561324290dbf1ad2e3c00edd",
+      "rows_read": 901429,
+      "csv_reject_count": 0
+    },
+    "salimt/player_injuries_updated_20260929.csv": {
+      "url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_injuries/player_injuries_updated_20260929.csv",
+      "sha256": "c622ed5684ec42e456ee23a9f5a78d61f74293d55e38882a7829ad71fb40d815",
+      "expected_sha256": "c622ed5684ec42e456ee23a9f5a78d61f74293d55e38882a7829ad71fb40d815",
+      "pin_verified": true,
+      "size_bytes": 9455168,
+      "commit_sha": "da9227e1f42baf74561324290dbf1ad2e3c00edd",
+      "rows_read": 168290,
+      "csv_reject_count": 0
+    },
+    "salimt/team_competitions_seasons.csv": {
+      "url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/team_competitions_seasons/team_competitions_seasons.csv",
+      "sha256": "83f06c8108e87d74ebccd7d02df9b7a5fe5769bbc7004771af64230b1eff6319",
+      "expected_sha256": "83f06c8108e87d74ebccd7d02df9b7a5fe5769bbc7004771af64230b1eff6319",
+      "pin_verified": true,
+      "size_bytes": 11032370,
+      "commit_sha": "da9227e1f42baf74561324290dbf1ad2e3c00edd",
+      "rows_read": 58247,
+      "csv_reject_count": 0
+    },
+    "salimt/player_performances.csv": {
+      "url": "https://media.githubusercontent.com/media/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_performances/player_performances.csv",
+      "sha256": "21eda6556654478fe986de8972d3b94aea6551ebcd74d5eb153b65edb53d132b",
+      "expected_sha256": "21eda6556654478fe986de8972d3b94aea6551ebcd74d5eb153b65edb53d132b",
+      "pin_verified": true,
+      "size_bytes": 157647289,
+      "commit_sha": "da9227e1f42baf74561324290dbf1ad2e3c00edd",
+      "rows_read": 1878716,
+      "csv_reject_count": 3
+    }
+  },
+  "canonical_sources": {
+    "players": "dcaribou/players.csv.gz (position 'Missing' backfilled from salimt/player_profiles.csv)",
+    "valuations": "dcaribou/player_valuations.csv.gz (sole valuation source; includes current_club_id at valuation date)",
+    "appearances": "dcaribou/appearances.csv.gz + dcaribou/games.csv.gz (match-level; player_seasons is display-only)",
+    "transfers": "dcaribou/transfers.csv.gz (point-in-time days_since_joined_club < valuation_date)",
+    "injuries": "salimt/player_injuries_updated_20260929.csv (lakehouse-only; clipped at valuation date t)",
+    "club_season_league_lookup": "dcaribou/games.csv.gz + salimt/team_competitions_seasons.csv (tier_level=1) + salimt/player_performances.csv (EC_COMP_IDS Tier 1 excluding EC2L Serie B)"
+  },
+  "entity_overlap": {
+    "global_dcaribou_total_players": 50149,
+    "global_matched_in_salimt_by_tm_player_id": 30361,
+    "global_id_coverage_pct": 60.54,
+    "global_dob_agreed_among_matched": 30230,
+    "global_dob_agreement_pct_among_matched": 99.57,
+    "target_cohort_total_players": 2551,
+    "target_cohort_matched_in_salimt_by_id": 2357,
+    "target_cohort_player_match_pct": 92.4,
+    "target_cohort_dob_agreed_among_matched": 2349,
+    "target_cohort_dob_agreement_pct_among_matched": 99.66,
+    "target_cohort_players_with_injuries": 1989,
+    "target_cohort_players_with_injuries_pct": 77.97,
+    "target_cohort_total_valuations": 19938,
+    "target_cohort_valuations_matched_in_salimt": 18941,
+    "target_cohort_valuation_match_pct": 95.0,
+    "target_cohort_unmatched_players": 194,
+    "target_cohort_unmatched_recovered_by_name_dob": 0
+  },
+  "position_distribution": [
+    {
+      "dc_position": "Defender",
+      "resolved_position": "Defender",
+      "player_count": 15961
+    },
+    {
+      "dc_position": "Midfield",
+      "resolved_position": "Midfield",
+      "player_count": 14272
+    },
+    {
+      "dc_position": "Attack",
+      "resolved_position": "Attack",
+      "player_count": 13502
+    },
+    {
+      "dc_position": "Goalkeeper",
+      "resolved_position": "Goalkeeper",
+      "player_count": 5828
+    },
+    {
+      "dc_position": "Missing",
+      "resolved_position": "Missing",
+      "player_count": 491
+    },
+    {
+      "dc_position": "Missing",
+      "resolved_position": "Midfield",
+      "player_count": 43
+    },
+    {
+      "dc_position": "Missing",
+      "resolved_position": "Attack",
+      "player_count": 28
+    },
+    {
+      "dc_position": "Missing",
+      "resolved_position": "Defender",
+      "player_count": 24
+    }
+  ],
+  "missing_club_stats": {
+    "total_players": 50149,
+    "null_club_id": 0,
+    "null_domestic_comp_id": 2986,
+    "inactive_or_unattached": 2986,
+    "active_serving_scope_total": 536,
+    "active_serving_scope_gb1": 525,
+    "active_serving_scope_ec1": 11,
+    "policy": "Populate players.current_league_code with COALESCE(current_club_domestic_competition_id, last_valuation_league_code, 'UNKNOWN') to satisfy NOT NULL on historical players, but NEVER use players.current_league_code to define active API serving scope. Instead, active serving scope is defined exclusively by row existence in player_current_features (players with a valuation in the last ~12 months >= 2025-06-12, not retired/unattached, whose club's 2025 season league is GB1 or EC1): 525 GB1 players and 11 EC1 players (536 total). Live API serving is therefore effectively Premier League (97.9% GB1), while EC1 is primarily an historical evaluation-only OOD slice."
+  },
+  "appearance_coverage_by_year": [
+    {
+      "year": 2012,
+      "total_appearances": 71688,
+      "distinct_players": 5931,
+      "valid_minutes_rows": 71688,
+      "total_goals": 7356
+    },
+    {
+      "year": 2013,
+      "total_appearances": 129862,
+      "distinct_players": 7747,
+      "valid_minutes_rows": 129862,
+      "total_goals": 12817
+    },
+    {
+      "year": 2014,
+      "total_appearances": 125776,
+      "distinct_players": 7641,
+      "valid_minutes_rows": 125776,
+      "total_goals": 12027
+    },
+    {
+      "year": 2015,
+      "total_appearances": 132338,
+      "distinct_players": 7744,
+      "valid_minutes_rows": 132338,
+      "total_goals": 12755
+    },
+    {
+      "year": 2016,
+      "total_appearances": 131075,
+      "distinct_players": 7789,
+      "valid_minutes_rows": 131075,
+      "total_goals": 12720
+    },
+    {
+      "year": 2017,
+      "total_appearances": 135103,
+      "distinct_players": 7737,
+      "valid_minutes_rows": 135103,
+      "total_goals": 13297
+    },
+    {
+      "year": 2018,
+      "total_appearances": 126996,
+      "distinct_players": 7852,
+      "valid_minutes_rows": 126996,
+      "total_goals": 12630
+    },
+    {
+      "year": 2019,
+      "total_appearances": 128672,
+      "distinct_players": 7688,
+      "valid_minutes_rows": 128672,
+      "total_goals": 13009
+    },
+    {
+      "year": 2020,
+      "total_appearances": 114160,
+      "distinct_players": 7828,
+      "valid_minutes_rows": 114160,
+      "total_goals": 10861
+    },
+    {
+      "year": 2021,
+      "total_appearances": 147383,
+      "distinct_players": 7905,
+      "valid_minutes_rows": 147383,
+      "total_goals": 13575
+    },
+    {
+      "year": 2022,
+      "total_appearances": 129335,
+      "distinct_players": 7784,
+      "valid_minutes_rows": 129335,
+      "total_goals": 11867
+    },
+    {
+      "year": 2023,
+      "total_appearances": 150698,
+      "distinct_players": 8379,
+      "valid_minutes_rows": 150698,
+      "total_goals": 13726
+    },
+    {
+      "year": 2024,
+      "total_appearances": 145640,
+      "distinct_players": 8874,
+      "valid_minutes_rows": 145640,
+      "total_goals": 13475
+    },
+    {
+      "year": 2025,
+      "total_appearances": 153216,
+      "distinct_players": 9914,
+      "valid_minutes_rows": 153216,
+      "total_goals": 13876
+    },
+    {
+      "year": 2026,
+      "total_appearances": 72408,
+      "distinct_players": 6922,
+      "valid_minutes_rows": 72405,
+      "total_goals": 6446
+    }
+  ],
+  "valuation_cleaning_log": {
+    "raw_total_valuations": 656301,
+    "dropped_non_positive_value": 1,
+    "dropped_duplicate_player_date": 0,
+    "dropped_missing_dob": 600,
+    "dropped_missing_position": 404,
+    "dropped_before_2013_07_01_appearance_window": 100805,
+    "dropped_incomplete_2026_2027_cycle": 0,
+    "clean_all_leagues_valuations": 554491,
+    "excluded_other_leagues": 534553,
+    "clean_gb1_ec1_valuations": 19938,
+    "clean_gb1_valuations": 19273,
+    "clean_gb1_players": 2421,
+    "clean_ec1_valuations": 665,
+    "clean_ec1_players": 137,
+    "clean_ec1_clubs": 26
+  },
+  "promotion_relegation_audit": {
+    "total_vals_2013_2026": 554491,
+    "total_static_gb1_rows": 27605,
+    "true_20_club_pit_gb1_rows": 19273,
+    "fake_static_gb1_relegated_club_rows": 8332,
+    "fake_static_gb1_relegated_pct": 30.18,
+    "static_vs_point_in_time_mismatches": 98092,
+    "ec1_club_vals_labeled_ec1": 665,
+    "ec1_club_vals_excluded_serie_b_or_other": 23
+  },
+  "cycle_breakdown_gb1_vs_ec1": [
+    {
+      "cycle": "2013/2014",
+      "gb1_vals": 997,
+      "gb1_players": 528,
+      "gb1_valid_contract_pct": 0.0,
+      "gb1_injury_profile_pct": 82.7,
+      "ec1_vals": 8,
+      "ec1_players": 4,
+      "ec1_valid_contract_pct": 0.0,
+      "ec1_injury_profile_pct": 75.0
+    },
+    {
+      "cycle": "2014/2015",
+      "gb1_vals": 971,
+      "gb1_players": 540,
+      "gb1_valid_contract_pct": 0.0,
+      "gb1_injury_profile_pct": 85.1,
+      "ec1_vals": 10,
+      "ec1_players": 5,
+      "ec1_valid_contract_pct": 0.0,
+      "ec1_injury_profile_pct": 60.0
+    },
+    {
+      "cycle": "2015/2016",
+      "gb1_vals": 1265,
+      "gb1_players": 638,
+      "gb1_valid_contract_pct": 0.2,
+      "gb1_injury_profile_pct": 87.6,
+      "ec1_vals": 6,
+      "ec1_players": 6,
+      "ec1_valid_contract_pct": 0.0,
+      "ec1_injury_profile_pct": 66.7
+    },
+    {
+      "cycle": "2016/2017",
+      "gb1_vals": 1676,
+      "gb1_players": 685,
+      "gb1_valid_contract_pct": 0.0,
+      "gb1_injury_profile_pct": 88.2,
+      "ec1_vals": 18,
+      "ec1_players": 11,
+      "ec1_valid_contract_pct": 0.0,
+      "ec1_injury_profile_pct": 55.6
+    },
+    {
+      "cycle": "2017/2018",
+      "gb1_vals": 1240,
+      "gb1_players": 621,
+      "gb1_valid_contract_pct": 0.2,
+      "gb1_injury_profile_pct": 90.3,
+      "ec1_vals": 33,
+      "ec1_players": 18,
+      "ec1_valid_contract_pct": 0.0,
+      "ec1_injury_profile_pct": 42.4
+    },
+    {
+      "cycle": "2018/2019",
+      "gb1_vals": 1394,
+      "gb1_players": 629,
+      "gb1_valid_contract_pct": 0.1,
+      "gb1_injury_profile_pct": 93.0,
+      "ec1_vals": 72,
+      "ec1_players": 33,
+      "ec1_valid_contract_pct": 0.0,
+      "ec1_injury_profile_pct": 59.7
+    },
+    {
+      "cycle": "2019/2020",
+      "gb1_vals": 1498,
+      "gb1_players": 691,
+      "gb1_valid_contract_pct": 0.2,
+      "gb1_injury_profile_pct": 92.2,
+      "ec1_vals": 50,
+      "ec1_players": 34,
+      "ec1_valid_contract_pct": 0.0,
+      "ec1_injury_profile_pct": 52.0
+    },
+    {
+      "cycle": "2020/2021",
+      "gb1_vals": 2190,
+      "gb1_players": 769,
+      "gb1_valid_contract_pct": 0.6,
+      "gb1_injury_profile_pct": 91.5,
+      "ec1_vals": 83,
+      "ec1_players": 36,
+      "ec1_valid_contract_pct": 0.0,
+      "ec1_injury_profile_pct": 44.6
+    },
+    {
+      "cycle": "2021/2022",
+      "gb1_vals": 1572,
+      "gb1_players": 749,
+      "gb1_valid_contract_pct": 3.3,
+      "gb1_injury_profile_pct": 91.9,
+      "ec1_vals": 62,
+      "ec1_players": 39,
+      "ec1_valid_contract_pct": 0.0,
+      "ec1_injury_profile_pct": 48.4
+    },
+    {
+      "cycle": "2022/2023",
+      "gb1_vals": 2105,
+      "gb1_players": 908,
+      "gb1_valid_contract_pct": 8.6,
+      "gb1_injury_profile_pct": 85.4,
+      "ec1_vals": 46,
+      "ec1_players": 43,
+      "ec1_valid_contract_pct": 0.0,
+      "ec1_injury_profile_pct": 41.3
+    },
+    {
+      "cycle": "2023/2024",
+      "gb1_vals": 1448,
+      "gb1_players": 655,
+      "gb1_valid_contract_pct": 28.2,
+      "gb1_injury_profile_pct": 91.5,
+      "ec1_vals": 125,
+      "ec1_players": 59,
+      "ec1_valid_contract_pct": 3.2,
+      "ec1_injury_profile_pct": 33.6
+    },
+    {
+      "cycle": "2024/2025",
+      "gb1_vals": 1387,
+      "gb1_players": 577,
+      "gb1_valid_contract_pct": 51.6,
+      "gb1_injury_profile_pct": 92.2,
+      "ec1_vals": 96,
+      "ec1_players": 52,
+      "ec1_valid_contract_pct": 11.5,
+      "ec1_injury_profile_pct": 18.8
+    },
+    {
+      "cycle": "2025/2026",
+      "gb1_vals": 1530,
+      "gb1_players": 565,
+      "gb1_valid_contract_pct": 15.2,
+      "gb1_injury_profile_pct": 86.6,
+      "ec1_vals": 56,
+      "ec1_players": 35,
+      "ec1_valid_contract_pct": 3.6,
+      "ec1_injury_profile_pct": 21.4
+    }
+  ],
+  "contract_viability": {
+    "dcaribou_max_valuation_date": "2026-06-03",
+    "salimt_profiles_commit_sha": "62ca05786a63f65ebf1220eaa8de6a4ef29abf69",
+    "salimt_profiles_snapshot_date": "2025-10-18",
+    "salimt_max_valid_extension_date": "2025-09-12",
+    "salimt_max_valid_joined_date": "2025-09-13",
+    "salimt_future_typo_extension_rows": 5,
+    "total_valid_per_row_count_2018_2026": 1624,
+    "pre_test_valid_per_row_count_2018_2025": 1390,
+    "test_cycle_valid_per_row_count_2025_2026": 234,
+    "by_cycle": [
+      {
+        "cycle": "2018/2019",
+        "n_vals": 1466,
+        "pct_sal_nonnull_exp": 60.2,
+        "ext_after_val_count": 275,
+        "pct_ext_after_val_all_rows": 18.8,
+        "valid_per_row_count": 2,
+        "valid_per_row_pct": 0.1
+      },
+      {
+        "cycle": "2019/2020",
+        "n_vals": 1548,
+        "pct_sal_nonnull_exp": 62.0,
+        "ext_after_val_count": 309,
+        "pct_ext_after_val_all_rows": 20.0,
+        "valid_per_row_count": 3,
+        "valid_per_row_pct": 0.2
+      },
+      {
+        "cycle": "2020/2021",
+        "n_vals": 2273,
+        "pct_sal_nonnull_exp": 68.0,
+        "ext_after_val_count": 474,
+        "pct_ext_after_val_all_rows": 20.9,
+        "valid_per_row_count": 13,
+        "valid_per_row_pct": 0.6
+      },
+      {
+        "cycle": "2021/2022",
+        "n_vals": 1634,
+        "pct_sal_nonnull_exp": 71.4,
+        "ext_after_val_count": 339,
+        "pct_ext_after_val_all_rows": 20.7,
+        "valid_per_row_count": 52,
+        "valid_per_row_pct": 3.2
+      },
+      {
+        "cycle": "2022/2023",
+        "n_vals": 2151,
+        "pct_sal_nonnull_exp": 77.2,
+        "ext_after_val_count": 468,
+        "pct_ext_after_val_all_rows": 21.8,
+        "valid_per_row_count": 182,
+        "valid_per_row_pct": 8.5
+      },
+      {
+        "cycle": "2023/2024",
+        "n_vals": 1573,
+        "pct_sal_nonnull_exp": 85.5,
+        "ext_after_val_count": 224,
+        "pct_ext_after_val_all_rows": 14.2,
+        "valid_per_row_count": 412,
+        "valid_per_row_pct": 26.2
+      },
+      {
+        "cycle": "2024/2025",
+        "n_vals": 1483,
+        "pct_sal_nonnull_exp": 89.3,
+        "ext_after_val_count": 145,
+        "pct_ext_after_val_all_rows": 9.8,
+        "valid_per_row_count": 726,
+        "valid_per_row_pct": 49.0
+      },
+      {
+        "cycle": "2025/2026",
+        "n_vals": 1586,
+        "pct_sal_nonnull_exp": 91.6,
+        "ext_after_val_count": 0,
+        "pct_ext_after_val_all_rows": 0.0,
+        "valid_per_row_count": 234,
+        "valid_per_row_pct": 14.8
+      }
+    ],
+    "policy": "Keep the main model strictly contract-free across all 19,938 rows. Enforce a single-snapshot contract filter using salimt's own contract_expires, tm_club_id_at_valuation = salimt.current_club_id, max(joined, date_of_last_contract_extension) <= t, and t <= 2025-10-18 (commit 62ca05786a). This yields 1,390 valid rows prior to 2025/2026 (1,624 total including 234 from the October 2025 batch, and 0 rows after 2025-10-18). Because the 2025/2026 test split has zero contract coverage after October 2025, Phase 3 will evaluate the contract-aware ablation on val_tune (2023/2024) and val_calib (2024/2025), and the UI contract field is expected to remain read-only."
+  },
+  "split_cutoffs": {
+    "train": {
+      "cycles": "2013/2014..2022/2023",
+      "min_valuation_date": "2013-07-02",
+      "max_valuation_date": "2023-06-30",
+      "total_vals": 15296,
+      "gb1_vals": 14908,
+      "ec1_vals": 388,
+      "ec1_players": 85
+    },
+    "val_tune": {
+      "cycles": "2023/2024",
+      "min_valuation_date": "2023-07-04",
+      "max_valuation_date": "2024-06-28",
+      "total_vals": 1573,
+      "gb1_vals": 1448,
+      "ec1_vals": 125,
+      "ec1_players": 59
+    },
+    "val_calib": {
+      "cycles": "2024/2025",
+      "min_valuation_date": "2024-07-01",
+      "max_valuation_date": "2025-06-30",
+      "total_vals": 1483,
+      "gb1_vals": 1387,
+      "ec1_vals": 96,
+      "ec1_players": 52
+    },
+    "test": {
+      "cycles": "2025/2026",
+      "min_valuation_date": "2025-07-04",
+      "max_valuation_date": "2026-06-03",
+      "total_vals": 1586,
+      "gb1_vals": 1530,
+      "ec1_vals": 56,
+      "ec1_players": 35
+    }
+  }
+}

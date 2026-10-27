@@ -4,6 +4,7 @@ from pathlib import Path
 
 from src.config import Settings
 from src.db.models import Base
+from src.db.session import engine
 
 EXPECTED_SERVING_TABLES = {
     "players",
@@ -84,12 +85,18 @@ def test_no_raw_sql_schema_file_exists() -> None:
 
 def test_settings_defaults_isolated_from_env_file() -> None:
     isolated = Settings(_env_file=None)
-    assert isolated.model_version == "v1.0.0"
+    assert not hasattr(isolated, "model_version")
     assert not hasattr(isolated, "data_version")
+    assert isolated.metadata_refresh_seconds == 60
     assert isolated.raw_data_dir == Path("data/raw")
     assert isolated.raw_manifest_path == Path("data/raw/MANIFEST.json")
     assert isolated.clean_data_dir == Path("data/clean")
     assert isolated.features_data_dir == Path("data/features")
+
+
+def test_connection_pool_sizing() -> None:
+    assert engine.pool.size() == 5
+    assert engine.pool._max_overflow == 10
 
 
 def test_alembic_offline_sql_generation() -> None:
