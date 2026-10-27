@@ -1,0 +1,32 @@
+{
+  "match_goals_per90_by_pos": {
+    "GK": 9.8e-05,
+    "DEF": 0.047758,
+    "MID": 0.129626,
+    "FWD": 0.369349
+  },
+  "match_assists_per90_by_pos": {
+    "GK": 0.003193,
+    "DEF": 0.061349,
+    "MID": 0.134136,
+    "FWD": 0.203219
+  },
+  "season_goals_per90_by_pos": {
+    "GK": 9.7e-05,
+    "DEF": 0.048273,
+    "MID": 0.130461,
+    "FWD": 0.372449
+  },
+  "season_assists_per90_by_pos": {
+    "GK": 0.003162,
+    "DEF": 0.061719,
+    "MID": 0.135063,
+    "FWD": 0.204586
+  },
+  "train_league_median_eur": {
+    "GB1": 5000000.0,
+    "EC1": 600000.0
+  },
+  "shrinkage_m0_minutes": 900.0,
+  "league_median_n_min": 30
+}
