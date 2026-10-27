@@ -1,6 +1,6 @@
 {
-  "data_version": "2026-06-12_ed95546f40",
-  "cleaned_at": "2026-10-26T21:53:48.649152+00:00",
+  "data_version": "2026-06-12_24ade17697",
+  "cleaned_at": "2026-10-27T08:02:25.049226+00:00",
   "valuation_drops": {
     "raw_total": 656301,
     "dropped_non_positive": 1,
@@ -9,15 +9,16 @@
     "dropped_missing_position": 404,
     "dropped_before_2013_07_01": 100805,
     "dropped_incomplete_cycle_from_2026_07_01": 0,
-    "excluded_other_leagues": 534530,
-    "kept_gb1_ec1_valuations": 19961
+    "excluded_other_leagues": 534553,
+    "kept_gb1_ec1_valuations": 19938
   },
   "clean_table_counts": {
-    "players": 2552,
-    "valuations": 19961,
-    "all_valuations": 56034,
+    "players": 2551,
+    "valuations": 19938,
+    "all_valuations": 56012,
     "appearances": 320861,
     "player_seasons": 14847,
-    "injuries": 17982
+    "transfers": 16724,
+    "injuries": 17979
   }
 }

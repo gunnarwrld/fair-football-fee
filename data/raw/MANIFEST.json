@@ -1,7 +1,7 @@
 {
-  "data_version": "2026-06-12_ed95546f40",
+  "data_version": "2026-06-12_24ade17697",
   "max_complete_valuation_date": "2026-06-12",
-  "generated_at": "2026-10-26T21:52:21.056199+00:00",
+  "generated_at": "2026-10-27T08:02:23.447213+00:00",
   "sources": {
     "dcaribou/competitions.csv.gz": {
       "url": "https://pub-e682421888d945d684bcae8890b0ec20.r2.dev/data/competitions.csv.gz",
@@ -56,45 +56,52 @@
       "sha256": "90326983daf7e6ac7aabdfe62b90936d9bf1dd2171e53dec75c3751eb1620a83",
       "expected_sha256": "90326983daf7e6ac7aabdfe62b90936d9bf1dd2171e53dec75c3751eb1620a83",
       "pin_verified": true,
-      "size_bytes": 5809514
+      "size_bytes": 5809514,
+      "csv_reject_count": 0
     },
     "salimt/player_profiles.csv": {
-      "url": "https://raw.githubusercontent.com/salimt/football-datasets/main/datalake/transfermarkt/player_profiles/player_profiles.csv",
+      "url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_profiles/player_profiles.csv",
       "sha256": "7ef9afbacf97577d099f21a0ef0ea0d46381bd4806a119f095b9562762a20096",
       "expected_sha256": "7ef9afbacf97577d099f21a0ef0ea0d46381bd4806a119f095b9562762a20096",
       "pin_verified": true,
       "size_bytes": 26380409,
+      "commit_sha": "62ca05786a63f65ebf1220eaa8de6a4ef29abf69",
+      "snapshot_date": "2025-10-18",
       "csv_reject_count": 0
     },
     "salimt/player_market_value.csv": {
-      "url": "https://raw.githubusercontent.com/salimt/football-datasets/main/datalake/transfermarkt/player_market_value/player_market_value.csv",
+      "url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_market_value/player_market_value.csv",
       "sha256": "e9e1868c883f0f40559127a407f5755c6a7f2e1ded1b4cec842d9185c4edb984",
       "expected_sha256": "e9e1868c883f0f40559127a407f5755c6a7f2e1ded1b4cec842d9185c4edb984",
       "pin_verified": true,
-      "size_bytes": 23873747
+      "size_bytes": 23873747,
+      "commit_sha": "da9227e1f42baf74561324290dbf1ad2e3c00edd"
     },
     "salimt/player_injuries_updated_20260929.csv": {
-      "url": "https://raw.githubusercontent.com/salimt/football-datasets/main/datalake/transfermarkt/player_injuries/player_injuries_updated_20260929.csv",
+      "url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_injuries/player_injuries_updated_20260929.csv",
       "sha256": "c622ed5684ec42e456ee23a9f5a78d61f74293d55e38882a7829ad71fb40d815",
       "expected_sha256": "c622ed5684ec42e456ee23a9f5a78d61f74293d55e38882a7829ad71fb40d815",
       "pin_verified": true,
       "size_bytes": 9455168,
+      "commit_sha": "da9227e1f42baf74561324290dbf1ad2e3c00edd",
       "csv_reject_count": 0
     },
     "salimt/team_competitions_seasons.csv": {
-      "url": "https://raw.githubusercontent.com/salimt/football-datasets/main/datalake/transfermarkt/team_competitions_seasons/team_competitions_seasons.csv",
+      "url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/team_competitions_seasons/team_competitions_seasons.csv",
       "sha256": "83f06c8108e87d74ebccd7d02df9b7a5fe5769bbc7004771af64230b1eff6319",
       "expected_sha256": "83f06c8108e87d74ebccd7d02df9b7a5fe5769bbc7004771af64230b1eff6319",
       "pin_verified": true,
       "size_bytes": 11032370,
+      "commit_sha": "da9227e1f42baf74561324290dbf1ad2e3c00edd",
       "csv_reject_count": 0
     },
     "salimt/player_performances.csv": {
-      "url": "https://media.githubusercontent.com/media/salimt/football-datasets/main/datalake/transfermarkt/player_performances/player_performances.csv",
+      "url": "https://media.githubusercontent.com/media/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_performances/player_performances.csv",
       "sha256": "21eda6556654478fe986de8972d3b94aea6551ebcd74d5eb153b65edb53d132b",
       "expected_sha256": "21eda6556654478fe986de8972d3b94aea6551ebcd74d5eb153b65edb53d132b",
       "pin_verified": true,
       "size_bytes": 157647289,
+      "commit_sha": "da9227e1f42baf74561324290dbf1ad2e3c00edd",
       "csv_reject_count": 3
     }
   },
@@ -128,7 +135,7 @@
     },
     "salimt_profiles.parquet": {
       "canonical_source": "salimt/player_profiles.csv",
-      "source_url": "https://raw.githubusercontent.com/salimt/football-datasets/main/datalake/transfermarkt/player_profiles/player_profiles.csv",
+      "source_url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_profiles/player_profiles.csv",
       "source_sha256": "7ef9afbacf97577d099f21a0ef0ea0d46381bd4806a119f095b9562762a20096",
       "csv_reject_count": 0,
       "row_count": 92671,
@@ -150,8 +157,8 @@
       "source_sha256": "e096c2b158fc3d52c4550526c4d4850dd62f31007652f4bcae112eadb1646802",
       "csv_reject_count": 0,
       "row_count": 1894350,
-      "size_bytes": 21794258,
-      "sha256": "0358dcbfdb27515e230bc6e708b141491d218d1ab3e3a2446a4af106bfcbe1f8"
+      "size_bytes": 21847335,
+      "sha256": "7538175c7f91cfa57b29a905aad9be63a2478ec7a61931fe45fae61268a53dc4"
     },
     "games.parquet": {
       "canonical_source": "dcaribou/games.csv.gz",
@@ -162,9 +169,18 @@
       "size_bytes": 2644056,
       "sha256": "a5c892f453f2654590e3d2b26b46be29e5bff6be96e0e6b8d426ec11a72b89c3"
     },
+    "transfers.parquet": {
+      "canonical_source": "dcaribou/transfers.csv.gz",
+      "source_url": "https://pub-e682421888d945d684bcae8890b0ec20.r2.dev/data/transfers.csv.gz",
+      "source_sha256": "90326983daf7e6ac7aabdfe62b90936d9bf1dd2171e53dec75c3751eb1620a83",
+      "csv_reject_count": 0,
+      "row_count": 175165,
+      "size_bytes": 3179474,
+      "sha256": "4da07551619490fc3084601dc6ee93d5e7907c7e801448b251d215625cdec4e4"
+    },
     "injuries.parquet": {
       "canonical_source": "salimt/player_injuries_updated_20260929.csv",
-      "source_url": "https://raw.githubusercontent.com/salimt/football-datasets/main/datalake/transfermarkt/player_injuries/player_injuries_updated_20260929.csv",
+      "source_url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_injuries/player_injuries_updated_20260929.csv",
       "source_sha256": "c622ed5684ec42e456ee23a9f5a78d61f74293d55e38882a7829ad71fb40d815",
       "csv_reject_count": 0,
       "row_count": 168290,
@@ -173,7 +189,7 @@
     },
     "team_competitions_seasons.parquet": {
       "canonical_source": "salimt/team_competitions_seasons.csv",
-      "source_url": "https://raw.githubusercontent.com/salimt/football-datasets/main/datalake/transfermarkt/team_competitions_seasons/team_competitions_seasons.csv",
+      "source_url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/team_competitions_seasons/team_competitions_seasons.csv",
       "source_sha256": "83f06c8108e87d74ebccd7d02df9b7a5fe5769bbc7004771af64230b1eff6319",
       "csv_reject_count": 0,
       "row_count": 58247,
@@ -182,12 +198,12 @@
     },
     "ec1_performances.parquet": {
       "canonical_source": "salimt/player_performances.csv",
-      "source_url": "https://media.githubusercontent.com/media/salimt/football-datasets/main/datalake/transfermarkt/player_performances/player_performances.csv",
+      "source_url": "https://media.githubusercontent.com/media/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_performances/player_performances.csv",
       "source_sha256": "21eda6556654478fe986de8972d3b94aea6551ebcd74d5eb153b65edb53d132b",
       "csv_reject_count": 3,
-      "row_count": 1520,
-      "size_bytes": 13791,
-      "sha256": "632568fc2d11a268b35e9ffa711a8b9fb9f345315176284cca95840b1f908d5e"
+      "row_count": 1583,
+      "size_bytes": 14531,
+      "sha256": "94f431134a2404d6ae0c2450fc6f0185c1e3e60e7b52301e5f4546314b67c718"
     }
   }
 }

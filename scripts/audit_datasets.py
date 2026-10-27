@@ -24,7 +24,16 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.data.ingest import verify_and_hash_raw_sources
-from src.data.pit_sql import EC_COMP_IDS, PINNED_SOURCES, register_pit_views
+from src.data.pit_sql import (
+    EC_COMP_IDS,
+    INACTIVE_CLUB_IDS,
+    INACTIVE_CLUB_NAMES,
+    PINNED_SOURCES,
+    SALIMT_COMMIT_SHA,
+    SALIMT_PROFILES_COMMIT_SHA,
+    SALIMT_PROFILES_SNAPSHOT_DATE,
+    register_pit_views,
+)
 
 RAW_SOURCES_DIR = Path("data/raw/sources")
 DCARIBOU_DIR = RAW_SOURCES_DIR / "dcaribou"
@@ -94,6 +103,9 @@ def inspect_licenses() -> dict[str, Any]:
             "license_file_present": sal_lic_path.exists(),
             "spdx_id": (sal_meta.get("license") or {}).get("spdx_id"),
             "license_name": (sal_meta.get("license") or {}).get("name"),
+            "pinned_repo_commit_sha": SALIMT_COMMIT_SHA,
+            "pinned_profiles_commit_sha": SALIMT_PROFILES_COMMIT_SHA,
+            "pinned_profiles_snapshot_date": SALIMT_PROFILES_SNAPSHOT_DATE,
             "note": (
                 "No LICENSE file in GitHub repository (GitHub API license=null -> all rights reserved "
                 "by default under copyright law, despite third-party mirrors claiming MIT/CC0). "
@@ -132,6 +144,7 @@ def run_duckdb_audit() -> dict[str, Any]:
         "dc_val": ("dcaribou/player_valuations.csv.gz", DCARIBOU_DIR / "player_valuations.csv.gz"),
         "dc_app": ("dcaribou/appearances.csv.gz", DCARIBOU_DIR / "appearances.csv.gz"),
         "dc_games": ("dcaribou/games.csv.gz", DCARIBOU_DIR / "games.csv.gz"),
+        "dc_transfers": ("dcaribou/transfers.csv.gz", DCARIBOU_DIR / "transfers.csv.gz"),
         "sal_prof": ("salimt/player_profiles.csv", SALIMT_DIR / "player_profiles.csv"),
         "sal_val": ("salimt/player_market_value.csv", SALIMT_DIR / "player_market_value.csv"),
         "sal_inj": (
@@ -149,22 +162,22 @@ def run_duckdb_audit() -> dict[str, Any]:
         stats = _register_csv_view_and_count_rejects(con, view_name, path)
         pinned_sources[rel_key].update(stats)
 
-    # Register shared point-in-time views (`club_season_pit`, `ec1_clubs`, `staged_valuations`)
+    # Register shared point-in-time views (`club_season_pit`, `ec1_club_seasons`, `staged_valuations`)
     register_pit_views(
         con,
         comp_view="dc_comp",
         games_view="dc_games",
         tcs_view="sal_tcs",
         tcs_comp_col="season_league_competition_id",
+        tcs_tier_col="season_league_level_level_number",
         ec_perf_view="sal_perf",
         ec_club_col="team_id",
-        ec_filter_clause=f"competition_id IN {EC_COMP_IDS}",
         val_view="dc_val",
         players_view="dc_players",
         sal_prof_view="sal_prof",
     )
 
-    # Create a helper view of clean target-cohort valuations (GB1 + EC1, 2013/14..2025/26)
+    # Helper view of clean target-cohort valuations (GB1 + EC1, 2013/14..2025/26)
     con.execute("""
         CREATE OR REPLACE TEMP VIEW clean_target_valuations AS
         SELECT *
@@ -285,7 +298,7 @@ def run_duckdb_audit() -> dict[str, Any]:
         for r in pos_dist_rows
     ]
 
-    # 3. Players with no current club or league against current_league_code NOT NULL
+    # 3. Players with no current club or league & Active Serving Scope (player_current_features)
     missing_club_row = con.sql("""
         SELECT
             COUNT(*) AS total_players,
@@ -297,15 +310,91 @@ def run_duckdb_audit() -> dict[str, Any]:
             ) AS inactive_or_unattached
         FROM dc_players
     """).fetchall()[0]
+
+    serving_scope_row = con.sql(f"""
+        WITH tc_players AS (
+            SELECT DISTINCT tm_player_id FROM clean_target_valuations
+        ),
+        latest_any_val AS (
+            SELECT
+                sv.tm_player_id,
+                MAX(sv.valuation_date) AS latest_val_date,
+                ARG_MAX(sv.league_at_valuation, sv.valuation_date) AS latest_val_league,
+                ARG_MAX(sv.tm_club_id_at_valuation, sv.valuation_date) AS latest_val_club_id
+            FROM staged_valuations sv
+            JOIN tc_players tc ON sv.tm_player_id = tc.tm_player_id
+            WHERE sv.market_value_eur > 0
+              AND sv.dup_rn = 1
+              AND sv.date_of_birth IS NOT NULL
+              AND sv.valuation_date < DATE '2026-07-01'
+            GROUP BY 1
+        ),
+        club_2025 AS (
+            SELECT DISTINCT club_id, 'GB1' AS league_2025
+            FROM (
+                SELECT home_club_id AS club_id FROM dc_games WHERE competition_id = 'GB1' AND season = 2025
+                UNION
+                SELECT away_club_id AS club_id FROM dc_games WHERE competition_id = 'GB1' AND season = 2025
+            )
+            UNION
+            SELECT DISTINCT club_id, 'EC1' AS league_2025
+            FROM ec1_club_seasons
+            WHERE season_year = 2025
+        ),
+        latest_transfer AS (
+            SELECT
+                CAST(player_id AS BIGINT) AS tm_player_id,
+                MAX(CAST(transfer_date AS DATE)) AS latest_transfer_date,
+                ARG_MAX(CAST(to_club_id AS BIGINT), CAST(transfer_date AS DATE)) AS latest_to_club_id
+            FROM dc_transfers
+            WHERE transfer_date IS NOT NULL
+              AND CAST(transfer_date AS DATE) <= DATE '2026-06-12'
+            GROUP BY 1
+        ),
+        active_supported AS (
+            SELECT
+                lv.tm_player_id,
+                c25.league_2025
+            FROM latest_any_val lv
+            JOIN dc_players p ON lv.tm_player_id = p.player_id
+            JOIN club_2025 c25 ON lv.latest_val_club_id = c25.club_id
+            LEFT JOIN latest_transfer lt ON lv.tm_player_id = lt.tm_player_id
+            WHERE lv.latest_val_date >= DATE '2025-06-12'
+              AND lv.latest_val_league IN ('GB1', 'EC1')
+              AND lv.latest_val_club_id NOT IN {INACTIVE_CLUB_IDS}
+              AND p.current_club_id NOT IN {INACTIVE_CLUB_IDS}
+              AND COALESCE(p.current_club_name, '') NOT IN {INACTIVE_CLUB_NAMES}
+              AND (
+                  lt.latest_transfer_date IS NULL
+                  OR lt.latest_transfer_date <= lv.latest_val_date
+                  OR lt.latest_to_club_id = lv.latest_val_club_id
+              )
+        )
+        SELECT
+            COUNT(*) AS total_supported_players,
+            COUNT(*) FILTER (WHERE league_2025 = 'GB1') AS gb1_supported_players,
+            COUNT(*) FILTER (WHERE league_2025 = 'EC1') AS ec1_supported_players
+        FROM active_supported
+    """).fetchall()[0]
+
     missing_club_stats = {
         "total_players": missing_club_row[0],
         "null_club_id": missing_club_row[1],
         "null_domestic_comp_id": missing_club_row[2],
         "inactive_or_unattached": missing_club_row[3],
+        "active_serving_scope_total": serving_scope_row[0],
+        "active_serving_scope_gb1": serving_scope_row[1],
+        "active_serving_scope_ec1": serving_scope_row[2],
         "policy": (
             "Populate players.current_league_code with COALESCE(current_club_domestic_competition_id, "
-            "last_valuation_league_code, 'UNKNOWN') so retired/free-agent players with valid historical "
-            "valuations are retained without violating NOT NULL."
+            "last_valuation_league_code, 'UNKNOWN') to satisfy NOT NULL on historical players, "
+            "but NEVER use players.current_league_code to define active API serving scope. "
+            "Instead, active serving scope is defined exclusively by row existence in "
+            "player_current_features (players with a valuation in the last ~12 months >= 2025-06-12, "
+            "not retired/unattached, whose club's 2025 season league is GB1 or EC1): "
+            f"{serving_scope_row[1]:,} GB1 players and {serving_scope_row[2]:,} EC1 players "
+            f"({serving_scope_row[0]:,} total). Live API serving is therefore effectively Premier League "
+            "(97.9% GB1), while EC1 is primarily an historical evaluation-only OOD slice."
         ),
     }
 
@@ -452,7 +541,7 @@ def run_duckdb_audit() -> dict[str, Any]:
         "clean_ec1_clubs": drop_row[14],
     }
 
-    # 6. Promotion/Relegation Leakage Audit + ec1_clubs pit_league_code breakdown
+    # 6. Promotion/Relegation Leakage Audit + ec1_clubs Tier-1 vs Serie B (`EC2L`) breakdown
     promo_row = con.sql("""
         SELECT
             COUNT(*) AS total_vals_2013_2026,
@@ -471,9 +560,13 @@ def run_duckdb_audit() -> dict[str, Any]:
                   AND tcs_derived_league != static_club_league
             ) AS static_vs_point_in_time_mismatches,
             COUNT(*) FILTER (WHERE is_ec1_club AND league_at_valuation = 'EC1') AS ec1_club_vals_labeled_ec1,
-            COUNT(*) FILTER (WHERE is_ec1_club AND league_at_valuation != 'EC1') AS ec1_club_vals_labeled_other
+            COUNT(*) FILTER (WHERE is_ec1_club AND league_at_valuation != 'EC1') AS ec1_club_vals_excluded_serie_b_or_other
         FROM staged_valuations
         WHERE valuation_date >= DATE '2013-07-01' AND valuation_date < DATE '2026-07-01'
+          AND market_value_eur > 0
+          AND dup_rn = 1
+          AND date_of_birth IS NOT NULL
+          AND resolved_position IN ('Goalkeeper', 'Defender', 'Midfield', 'Attack')
     """).fetchall()[0]
     promotion_relegation_audit = {
         "total_vals_2013_2026": promo_row[0],
@@ -483,7 +576,7 @@ def run_duckdb_audit() -> dict[str, Any]:
         "fake_static_gb1_relegated_pct": float(promo_row[4]),
         "static_vs_point_in_time_mismatches": promo_row[5],
         "ec1_club_vals_labeled_ec1": promo_row[6],
-        "ec1_club_vals_labeled_other": promo_row[7],
+        "ec1_club_vals_excluded_serie_b_or_other": promo_row[7],
     }
 
     # 7. Cycle-by-Cycle Counts & Non-Null Rates for GB1 vs EC1 (2013/2014 - 2025/2026)
@@ -496,9 +589,9 @@ def run_duckdb_audit() -> dict[str, Any]:
             COUNT(*) FILTER (WHERE pv.league_at_valuation = 'GB1') AS gb1_vals,
             COUNT(DISTINCT pv.tm_player_id) FILTER (WHERE pv.league_at_valuation = 'GB1') AS gb1_players,
             ROUND(
-                100.0 * COUNT(pv.dc_contract_expiration_date) FILTER (WHERE pv.league_at_valuation = 'GB1')
+                100.0 * COUNT(pv.valid_contract_years_remaining) FILTER (WHERE pv.league_at_valuation = 'GB1')
                 / NULLIF(COUNT(*) FILTER (WHERE pv.league_at_valuation = 'GB1'), 0), 1
-            ) AS gb1_contract_nonnull_pct,
+            ) AS gb1_valid_contract_pct,
             ROUND(
                 100.0 * COUNT(ip.player_id) FILTER (WHERE pv.league_at_valuation = 'GB1')
                 / NULLIF(COUNT(*) FILTER (WHERE pv.league_at_valuation = 'GB1'), 0), 1
@@ -506,9 +599,9 @@ def run_duckdb_audit() -> dict[str, Any]:
             COUNT(*) FILTER (WHERE pv.league_at_valuation = 'EC1') AS ec1_vals,
             COUNT(DISTINCT pv.tm_player_id) FILTER (WHERE pv.league_at_valuation = 'EC1') AS ec1_players,
             ROUND(
-                100.0 * COUNT(pv.dc_contract_expiration_date) FILTER (WHERE pv.league_at_valuation = 'EC1')
+                100.0 * COUNT(pv.valid_contract_years_remaining) FILTER (WHERE pv.league_at_valuation = 'EC1')
                 / NULLIF(COUNT(*) FILTER (WHERE pv.league_at_valuation = 'EC1'), 0), 1
-            ) AS ec1_contract_nonnull_pct,
+            ) AS ec1_valid_contract_pct,
             ROUND(
                 100.0 * COUNT(ip.player_id) FILTER (WHERE pv.league_at_valuation = 'EC1')
                 / NULLIF(COUNT(*) FILTER (WHERE pv.league_at_valuation = 'EC1'), 0), 1
@@ -523,17 +616,17 @@ def run_duckdb_audit() -> dict[str, Any]:
             "cycle": r[0],
             "gb1_vals": r[1],
             "gb1_players": r[2],
-            "gb1_contract_nonnull_pct": float(r[3] or 0.0),
+            "gb1_valid_contract_pct": float(r[3] or 0.0),
             "gb1_injury_profile_pct": float(r[4] or 0.0),
             "ec1_vals": r[5],
             "ec1_players": r[6],
-            "ec1_contract_nonnull_pct": float(r[7] or 0.0),
+            "ec1_valid_contract_pct": float(r[7] or 0.0),
             "ec1_injury_profile_pct": float(r[8] or 0.0),
         }
         for r in cycle_rows
     ]
 
-    # 8. Snapshot Date Comparison & Per-Row Contemporaneous Contract Validity Audit
+    # 8. Snapshot Date Comparison & Consistent Single-Snapshot `salimt` Per-Row Contract Audit
     snap_row = con.sql("""
         SELECT
             (SELECT MAX(valuation_date) FROM clean_target_valuations) AS dc_max_val_date,
@@ -542,54 +635,26 @@ def run_duckdb_audit() -> dict[str, Any]:
             (SELECT COUNT(*) FROM sal_prof WHERE date_of_last_contract_extension > DATE '2026-07-01') AS sal_future_typo_ext_rows
     """).fetchall()[0]
 
-    contract_rows = con.sql("""
+    contract_rows = con.sql(f"""
         SELECT
             cycle,
             COUNT(*) AS n_vals,
-            ROUND(100.0 * COUNT(dc_contract_expiration_date) / COUNT(*), 1) AS pct_nonnull_exp,
+            ROUND(100.0 * COUNT(sal_contract_expires) / COUNT(*), 1) AS pct_sal_nonnull_exp,
             COUNT(*) FILTER (
                 WHERE sal_last_extension IS NOT NULL
-                  AND sal_last_extension <= DATE '2025-09-12'
+                  AND sal_last_extension <= DATE '{SALIMT_PROFILES_SNAPSHOT_DATE}'
                   AND sal_last_extension > valuation_date
             ) AS ext_after_val_count,
             ROUND(
                 100.0 * COUNT(*) FILTER (
                     WHERE sal_last_extension IS NOT NULL
-                      AND sal_last_extension <= DATE '2025-09-12'
+                      AND sal_last_extension <= DATE '{SALIMT_PROFILES_SNAPSHOT_DATE}'
                       AND sal_last_extension > valuation_date
                 ) / COUNT(*), 1
             ) AS pct_ext_after_val_all_rows,
-            COUNT(*) FILTER (
-                WHERE dc_contract_expiration_date IS NOT NULL
-                  AND dc_contract_expiration_date > valuation_date
-                  AND tm_club_id_at_valuation = dc_current_club_id
-                  AND sal_joined IS NOT NULL
-                  AND sal_joined <= DATE '2025-09-13'
-                  AND GREATEST(
-                      sal_joined,
-                      COALESCE(
-                          CASE WHEN sal_last_extension <= DATE '2025-09-12'
-                               THEN sal_last_extension ELSE NULL END,
-                          sal_joined
-                      )
-                  ) <= valuation_date
-            ) AS valid_per_row_count,
+            COUNT(valid_contract_years_remaining) AS valid_per_row_count,
             ROUND(
-                100.0 * COUNT(*) FILTER (
-                    WHERE dc_contract_expiration_date IS NOT NULL
-                      AND dc_contract_expiration_date > valuation_date
-                      AND tm_club_id_at_valuation = dc_current_club_id
-                      AND sal_joined IS NOT NULL
-                      AND sal_joined <= DATE '2025-09-13'
-                      AND GREATEST(
-                          sal_joined,
-                          COALESCE(
-                              CASE WHEN sal_last_extension <= DATE '2025-09-12'
-                                   THEN sal_last_extension ELSE NULL END,
-                              sal_joined
-                          )
-                      ) <= valuation_date
-                ) / COUNT(*), 1
+                100.0 * COUNT(valid_contract_years_remaining) / COUNT(*), 1
             ) AS valid_per_row_pct
         FROM clean_target_valuations
         WHERE valuation_date >= DATE '2018-07-01'
@@ -600,7 +665,7 @@ def run_duckdb_audit() -> dict[str, Any]:
         {
             "cycle": r[0],
             "n_vals": r[1],
-            "pct_nonnull_exp": float(r[2] or 0.0),
+            "pct_sal_nonnull_exp": float(r[2] or 0.0),
             "ext_after_val_count": r[3],
             "pct_ext_after_val_all_rows": float(r[4] or 0.0),
             "valid_per_row_count": r[5],
@@ -609,6 +674,12 @@ def run_duckdb_audit() -> dict[str, Any]:
         for r in contract_rows
     ]
     total_valid_per_row = sum(c["valid_per_row_count"] for c in contract_viability_by_cycle)
+    pre_test_valid_per_row = sum(
+        c["valid_per_row_count"] for c in contract_viability_by_cycle if c["cycle"] != "2025/2026"
+    )
+    test_cycle_valid_per_row = sum(
+        c["valid_per_row_count"] for c in contract_viability_by_cycle if c["cycle"] == "2025/2026"
+    )
 
     # 9. Compute exact row counts per temporal split from clean_target_valuations
     split_rows = con.sql("""
@@ -650,8 +721,12 @@ def run_duckdb_audit() -> dict[str, Any]:
             "players": "dcaribou/players.csv.gz (position 'Missing' backfilled from salimt/player_profiles.csv)",
             "valuations": "dcaribou/player_valuations.csv.gz (sole valuation source; includes current_club_id at valuation date)",
             "appearances": "dcaribou/appearances.csv.gz + dcaribou/games.csv.gz (match-level; player_seasons is display-only)",
+            "transfers": "dcaribou/transfers.csv.gz (point-in-time days_since_joined_club < valuation_date)",
             "injuries": "salimt/player_injuries_updated_20260929.csv (lakehouse-only; clipped at valuation date t)",
-            "club_season_league_lookup": "dcaribou/games.csv.gz + salimt/team_competitions_seasons.csv + EC1 club registry",
+            "club_season_league_lookup": (
+                "dcaribou/games.csv.gz + salimt/team_competitions_seasons.csv (tier_level=1) "
+                "+ salimt/player_performances.csv (EC_COMP_IDS Tier 1 excluding EC2L Serie B)"
+            ),
         },
         "entity_overlap": entity_overlap,
         "position_distribution": position_distribution,
@@ -662,17 +737,25 @@ def run_duckdb_audit() -> dict[str, Any]:
         "cycle_breakdown_gb1_vs_ec1": cycle_breakdown,
         "contract_viability": {
             "dcaribou_max_valuation_date": snap_row[0].isoformat(),
+            "salimt_profiles_commit_sha": SALIMT_PROFILES_COMMIT_SHA,
+            "salimt_profiles_snapshot_date": SALIMT_PROFILES_SNAPSHOT_DATE,
             "salimt_max_valid_extension_date": snap_row[1].isoformat(),
             "salimt_max_valid_joined_date": snap_row[2].isoformat(),
             "salimt_future_typo_extension_rows": snap_row[3],
             "total_valid_per_row_count_2018_2026": total_valid_per_row,
+            "pre_test_valid_per_row_count_2018_2025": pre_test_valid_per_row,
+            "test_cycle_valid_per_row_count_2025_2026": test_cycle_valid_per_row,
             "by_cycle": contract_viability_by_cycle,
             "policy": (
-                "Keep the main model strictly contract-free across all 19,961 rows. Export "
-                f"per-row validated contract_years_remaining ({total_valid_per_row:,} rows passing "
-                "max(joined, date_of_last_contract_extension) <= t and same club) for Phase 3's "
-                "recent-window contract-aware ablation before deciding whether the UI contract "
-                "slider is active or read-only."
+                f"Keep the main model strictly contract-free across all {valuation_cleaning_log['clean_gb1_ec1_valuations']:,} rows. "
+                "Enforce a single-snapshot contract filter using salimt's own contract_expires, "
+                "tm_club_id_at_valuation = salimt.current_club_id, max(joined, date_of_last_contract_extension) <= t, "
+                f"and t <= {SALIMT_PROFILES_SNAPSHOT_DATE} (commit {SALIMT_PROFILES_COMMIT_SHA[:10]}). "
+                f"This yields {pre_test_valid_per_row:,} valid rows prior to 2025/2026 ({total_valid_per_row:,} total "
+                f"including {test_cycle_valid_per_row:,} from the October 2025 batch, and 0 rows after {SALIMT_PROFILES_SNAPSHOT_DATE}). "
+                "Because the 2025/2026 test split has zero contract coverage after October 2025, Phase 3 will "
+                "evaluate the contract-aware ablation on val_tune (2023/2024) and val_calib (2024/2025), and "
+                "the UI contract field is expected to remain read-only."
             ),
         },
         "split_cutoffs": split_cutoffs,
@@ -704,15 +787,16 @@ def write_markdown_report(summary: dict[str, Any]) -> None:
         f"| `salimt/football-datasets` | `{lic_sal['license_file_present']}` | `{lic_sal['spdx_id']}` | {lic_sal['note']} |",
         "",
         "### Pinned Raw Source Files & CSV Reject Audit (`store_rejects=true`)",
-        "| Source File | SHA-256 (Prefix) | Size (Bytes) | CSV Rows Read | CSV Reject Count |",
-        "| :--- | :--- | ---: | ---: | ---: |",
+        "| Source File | Pinned URL / Commit | SHA-256 (Prefix) | Size (Bytes) | CSV Rows Read | CSV Reject Count |",
+        "| :--- | :--- | :--- | ---: | ---: | ---: |",
     ]
     for rel_key, meta in summary["pinned_sources"].items():
         rows_read = meta.get("rows_read")
         rows_str = f"{rows_read:,}" if rows_read is not None else "N/A"
         rej_cnt = meta.get("csv_reject_count", 0)
+        commit_str = f"`{meta['commit_sha'][:10]}`" if "commit_sha" in meta else "`r2-pinned`"
         lines.append(
-            f"| `{rel_key}` | `{meta['sha256'][:12]}...` | {meta['size_bytes']:,} | {rows_str} | {rej_cnt:,} |"
+            f"| `{rel_key}` | {commit_str} | `{meta['sha256'][:12]}...` | {meta['size_bytes']:,} | {rows_str} | {rej_cnt:,} |"
         )
 
     lines.extend([
@@ -757,9 +841,10 @@ def write_markdown_report(summary: dict[str, Any]) -> None:
 
     lines.extend([
         "",
-        "### 4.2 Missing Club / League (`current_league_code NOT NULL`)",
+        "### 4.2 Missing Club / League & Active Serving Scope (`player_current_features`)",
         f"- Total `dcaribou` players: **{mc['total_players']:,}**",
         f"- `current_club_domestic_competition_id IS NULL`: **{mc['null_domestic_comp_id']:,}** (retired, free agents, or non-headline clubs)",
+        f"- **Active Supported Serving Scope (`player_current_features` rows)**: **{mc['active_serving_scope_total']:,}** players (`GB1`: **{mc['active_serving_scope_gb1']:,}**, `EC1`: **{mc['active_serving_scope_ec1']:,}**)",
         f"- **Policy**: {mc['policy']}",
         "",
         "### 4.3 Valuation Cleaning Drop Log",
@@ -771,28 +856,28 @@ def write_markdown_report(summary: dict[str, Any]) -> None:
         f"- Dropped (`valuation_date < 2013-07-01`, prior to appearance coverage window): **{vcl['dropped_before_2013_07_01_appearance_window']:,}**",
         f"- Dropped (`valuation_date >= 2026-07-01`, incomplete current cycle): **{vcl['dropped_incomplete_2026_2027_cycle']:,}**",
         f"- **Remaining Clean Valuations (All Leagues, 2013/14–2025/26)**: **{vcl['clean_all_leagues_valuations']:,}**",
-        f"- Excluded other leagues (`league_at_valuation NOT IN ('GB1', 'EC1')`): **{vcl['excluded_other_leagues']:,}**",
+        f"- Excluded other leagues (`league_at_valuation NOT IN ('GB1', 'EC1')`, including Ecuador Serie B `EC2L`): **{vcl['excluded_other_leagues']:,}**",
         f"- **Remaining Clean Target Cohort Valuations (`GB1` + `EC1`, 2013/14–2025/26)**: **{vcl['clean_gb1_ec1_valuations']:,}** (`GB1`: **{vcl['clean_gb1_valuations']:,}** across **{vcl['clean_gb1_players']:,}** players; `EC1`: **{vcl['clean_ec1_valuations']:,}** across **{vcl['clean_ec1_players']:,}** players at **{vcl['clean_ec1_clubs']:,}** Ecuadorian clubs)",
         "",
-        "### 4.4 Promotion & Relegation Leakage Audit (`league_at_valuation`)",
+        "### 4.4 Promotion & Relegation Leakage Audit (`league_at_valuation` & `tier_level = 1`)",
         f"- Total valuations (`2013/14`–`2025/26`) with static `player_club_domestic_competition_id = 'GB1'`: **{pr['total_static_gb1_rows']:,}**",
         f"- True point-in-time `GB1` valuations (club was one of the 20 Premier League clubs in `dcaribou/games.csv.gz` that season): **{pr['true_20_club_pit_gb1_rows']:,}**",
         f"- Relegated/lower-tier club valuations falsely labeled `GB1` by static club table: **{pr['fake_static_gb1_relegated_club_rows']:,} ({pr['fake_static_gb1_relegated_pct']:.2f}% of static `GB1` rows)**",
         f"- All-league static vs. point-in-time mismatches (`team_competitions_seasons`): **{pr['static_vs_point_in_time_mismatches']:,}**",
-        f"- Valuations at `ec1_clubs` (`2013/14`–`2025/26`) resolved to `EC1`: **{pr['ec1_club_vals_labeled_ec1']:,}** (resolved to other codes: **{pr['ec1_club_vals_labeled_other']:,}**)",
+        f"- Valuations at ever-Tier-1 Ecuadorian clubs (`2013/14`–`2025/26`) verified in `EC1` (Serie A Tier 1) for that calendar year: **{pr['ec1_club_vals_labeled_ec1']:,}** (excluded because the club was in `EC2L` Serie B or pre-promotion in that calendar year: **{pr['ec1_club_vals_excluded_serie_b_or_other']:,}**)",
         "",
         "## 5. July–June Cycle Breakdown & Split Cutoffs (`GB1` vs. `EC1` Survivorship OOD Slice)",
-        "| Cycle | `GB1` Valuations | `GB1` Players | `GB1` Contract Non-Null % | `GB1` Injury History % | `EC1` Valuations | `EC1` Players | `EC1` Contract Non-Null % | `EC1` Injury History % |",
+        "| Cycle | `GB1` Valuations | `GB1` Players | `GB1` Valid Contract % | `GB1` Injury History % | `EC1` Valuations | `EC1` Players | `EC1` Valid Contract % | `EC1` Injury History % |",
         "| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ])
     for c in summary["cycle_breakdown_gb1_vs_ec1"]:
         lines.append(
-            f"| `{c['cycle']}` | {c['gb1_vals']:,} | {c['gb1_players']:,} | {c['gb1_contract_nonnull_pct']:.1f}% | {c['gb1_injury_profile_pct']:.1f}% | {c['ec1_vals']:,} | {c['ec1_players']:,} | {c['ec1_contract_nonnull_pct']:.1f}% | {c['ec1_injury_profile_pct']:.1f}% |"
+            f"| `{c['cycle']}` | {c['gb1_vals']:,} | {c['gb1_players']:,} | {c['gb1_valid_contract_pct']:.1f}% | {c['gb1_injury_profile_pct']:.1f}% | {c['ec1_vals']:,} | {c['ec1_players']:,} | {c['ec1_valid_contract_pct']:.1f}% | {c['ec1_injury_profile_pct']:.1f}% |"
         )
 
     lines.extend([
         "",
-        f"> **Note on `EC1` Survivorship Sample**: With **{vcl['clean_ec1_valuations']:,} valuations across {vcl['clean_ec1_players']:,} players at {vcl['clean_ec1_clubs']:,} clubs**, the `EC1` cohort represents **Ecuador-stage valuations of players who reached Transfermarkt-tracked clubs** (a survivorship-selected out-of-distribution slice rather than a complete census of Liga Pro Ecuador). Evaluation in Phase 3 will report player-level block bootstrap confidence intervals on the `{splits['test']['ec1_vals']:,}` test-split `EC1` valuations.",
+        f"> **Note on `EC1` Survivorship OOD Slice & Live Serving Scope**: With **{vcl['clean_ec1_valuations']:,} Tier-1 valuations across {vcl['clean_ec1_players']:,} players at {vcl['clean_ec1_clubs']:,} clubs** historically, and only **{mc['active_serving_scope_ec1']:,} active `EC1` players** vs. **{mc['active_serving_scope_gb1']:,} active `GB1` players** in `player_current_features`, live API serving is effectively Premier League (`GB1`), while `EC1` is an historical evaluation-only out-of-distribution (OOD) slice of Ecuador-stage valuations for players who reached Transfermarkt-tracked clubs. Phase 3 reports player-level block bootstrap confidence intervals on the `{splits['test']['ec1_vals']:,}` test-split `EC1` valuations.",
         "",
         "### Temporal Split Cutoffs & Computed Row Counts",
         "| Split | Cycles | Min Valuation Date | Max Valuation Date | Total Valuations | `GB1` Valuations | `EC1` Valuations | `EC1` Players |",
@@ -805,22 +890,25 @@ def write_markdown_report(summary: dict[str, Any]) -> None:
 
     lines.extend([
         "",
-        "## 6. Snapshot-Date Comparison & Per-Row Contemporaneous Contract Audit",
+        "## 6. Snapshot-Date Comparison & Single-Snapshot `salimt` Per-Row Contract Audit",
         f"- `dcaribou` max valuation date in cohort: **`{cv['dcaribou_max_valuation_date']}`**",
+        f"- `salimt/player_profiles.csv` GitHub commit SHA & snapshot date: **`{cv['salimt_profiles_commit_sha'][:10]}` (`{cv['salimt_profiles_snapshot_date']}`)**",
         f"- `salimt/player_profiles.csv` max valid `date_of_last_contract_extension`: **`{cv['salimt_max_valid_extension_date']}`** (excluding `{cv['salimt_future_typo_extension_rows']}` future-dated typo rows `> 2026-07-01`)",
         f"- `salimt/player_profiles.csv` max valid `joined` date: **`{cv['salimt_max_valid_joined_date']}`**",
-        "- Because `salimt/player_profiles.csv` was scraped in September 2025 (`2025-09-12`) whereas `dcaribou` valuations run through June 2026 (`2026-06-12`), `salimt` has no extension records after `2025-09-12`.",
+        f"- Because `salimt/player_profiles.csv` was committed on `{cv['salimt_profiles_snapshot_date']}` whereas `dcaribou` valuations run through `{cv['dcaribou_max_valuation_date']}`, mixing `dcaribou`'s contract expiry with `salimt`'s extension date would leak extensions signed after `{cv['salimt_profiles_snapshot_date']}`. The consistent per-row filter uses `salimt`'s own `contract_expires > t`, `tm_club_id_at_valuation = salimt.current_club_id`, `max(joined, date_of_last_contract_extension) <= t`, and `t <= {cv['salimt_profiles_snapshot_date']}`.",
         "",
-        "| Cycle | Valuations (`GB1`+`EC1`) | Static Contract Non-Null % | Extended After Val Date (Count) | Extended After Val Date (% of All Rows) | Per-Row Valid Contract (Count) | Per-Row Valid Contract (% of All Rows) |",
+        "| Cycle | Valuations (`GB1`+`EC1`) | `salimt` Contract Non-Null % | Extended After Val Date (Count) | Extended After Val Date (% of All Rows) | Per-Row Valid Contract (Count) | Per-Row Valid Contract (% of All Rows) |",
         "| :--- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ])
     for c in cv["by_cycle"]:
         lines.append(
-            f"| `{c['cycle']}` | {c['n_vals']:,} | {c['pct_nonnull_exp']:.1f}% | {c['ext_after_val_count']:,} | {c['pct_ext_after_val_all_rows']:.1f}% | **{c['valid_per_row_count']:,}** | **{c['valid_per_row_pct']:.1f}%** |"
+            f"| `{c['cycle']}` | {c['n_vals']:,} | {c['pct_sal_nonnull_exp']:.1f}% | {c['ext_after_val_count']:,} | {c['pct_ext_after_val_all_rows']:.1f}% | **{c['valid_per_row_count']:,}** | **{c['valid_per_row_pct']:.1f}%** |"
         )
     lines.extend([
         "",
-        f"- **Total Per-Row Valid Contract Valuations (`2018/19`–`2025/26`)**: **{cv['total_valid_per_row_count_2018_2026']:,}**",
+        f"- **Valid Contract Valuations Pre-Test (`2018/19`–`2024/25`)**: **{cv['pre_test_valid_per_row_count_2018_2025']:,}**",
+        f"- **Valid Contract Valuations in `2025/2026` (`<= {cv['salimt_profiles_snapshot_date']}`)**: **{cv['test_cycle_valid_per_row_count_2025_2026']:,}** (`0` rows after `{cv['salimt_profiles_snapshot_date']}`)",
+        f"- **Total Single-Snapshot Valid Contract Valuations (`2018/19`–`2025/26`)**: **{cv['total_valid_per_row_count_2018_2026']:,}**",
         f"- **Policy**: {cv['policy']}",
     ])
 

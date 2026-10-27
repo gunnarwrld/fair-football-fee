@@ -6,7 +6,7 @@ import duckdb
 import pytest
 
 from src.data.clean import normalize_player_name, run_cleaning_pipeline
-from src.data.pit_sql import PINNED_SOURCES
+from src.data.pit_sql import PINNED_SOURCES, SALIMT_PROFILES_SNAPSHOT_DATE
 
 RAW_DIR = Path("data/raw")
 CLEAN_DIR = Path("data/clean")
@@ -28,20 +28,31 @@ def test_audit_report_and_summary_invariants() -> None:
     assert summary["licenses"]["dcaribou/transfermarkt-datasets"]["spdx_id"] == "CC0-1.0"
     assert summary["licenses"]["salimt/football-datasets"]["spdx_id"] is None
 
-    # Pinned sources and CSV reject counts must be logged
+    # Pinned sources (including commit SHA for salimt) and CSV reject counts must be logged
     assert set(summary["pinned_sources"].keys()) == set(PINNED_SOURCES.keys())
     for rel_key, src_meta in summary["pinned_sources"].items():
         assert len(src_meta["sha256"]) == 64
         assert src_meta["pin_verified"] is True
-        if rel_key != "dcaribou/transfers.csv.gz":
-            assert "csv_reject_count" in src_meta
-            assert src_meta["csv_reject_count"] >= 0
+        assert "csv_reject_count" in src_meta
+        assert src_meta["csv_reject_count"] >= 0
+        if rel_key.startswith("salimt/"):
+            assert "commit_sha" in src_meta
+            assert "/main/" not in src_meta["url"]
 
     # Target cohort match rate & DOB verification invariants
     eo = summary["entity_overlap"]
     assert eo["target_cohort_player_match_pct"] > 85.0
     assert eo["target_cohort_valuation_match_pct"] > 90.0
     assert eo["target_cohort_dob_agreement_pct_among_matched"] > 99.0
+
+    # Active serving scope invariants
+    mc = summary["missing_club_stats"]
+    assert mc["active_serving_scope_gb1"] > 500
+    assert mc["active_serving_scope_ec1"] < 25
+    assert (
+        mc["active_serving_scope_gb1"] + mc["active_serving_scope_ec1"]
+        == mc["active_serving_scope_total"]
+    )
 
     # Drop accounting reconciliation invariant
     vcl = summary["valuation_cleaning_log"]
@@ -58,7 +69,7 @@ def test_audit_report_and_summary_invariants() -> None:
     assert vcl["raw_total_valuations"] == reconciled_total
     assert vcl["clean_gb1_valuations"] + vcl["clean_ec1_valuations"] == vcl["clean_gb1_ec1_valuations"]
 
-    # Promotion/relegation identity & EC1 competition code verification
+    # Promotion/relegation identity & EC1 Tier-1 vs Serie B (`EC2L`) exclusion verification
     pr = summary["promotion_relegation_audit"]
     assert pr["fake_static_gb1_relegated_club_rows"] > 0
     assert (
@@ -66,12 +77,14 @@ def test_audit_report_and_summary_invariants() -> None:
         == pr["total_static_gb1_rows"]
     )
     assert pr["ec1_club_vals_labeled_ec1"] > 0
-    assert pr["ec1_club_vals_labeled_other"] == 0
+    assert pr["ec1_club_vals_excluded_serie_b_or_other"] > 0
 
-    # Per-row contract validity audit invariants
+    # Single-snapshot salimt per-row contract validity audit invariants
     cv = summary["contract_viability"]
+    assert cv["salimt_profiles_snapshot_date"] == SALIMT_PROFILES_SNAPSHOT_DATE
     assert cv["salimt_max_valid_extension_date"] < cv["dcaribou_max_valuation_date"]
-    assert cv["total_valid_per_row_count_2018_2026"] > 0
+    assert cv["pre_test_valid_per_row_count_2018_2025"] > 1000
+    assert cv["total_valid_per_row_count_2018_2026"] >= cv["pre_test_valid_per_row_count_2018_2025"]
 
 
 @pytest.mark.data
@@ -84,7 +97,7 @@ def test_raw_manifest_and_parquet_files() -> None:
     assert manifest["data_version"]
     assert "_" in manifest["data_version"]
     assert set(manifest["sources"].keys()) == set(PINNED_SOURCES.keys())
-    assert len(manifest["files"]) == 10
+    assert len(manifest["files"]) == 11
 
     for fname, meta in manifest["files"].items():
         p = RAW_DIR / fname
@@ -139,7 +152,11 @@ def test_clean_valuations_invariants_and_no_promotion_leakage() -> None:
             COUNT(*) FILTER (WHERE league_at_valuation NOT IN ('GB1', 'EC1')) AS other_leagues,
             COUNT(*) FILTER (WHERE league_at_valuation = 'GB1') AS gb1_count,
             COUNT(*) FILTER (WHERE league_at_valuation = 'EC1') AS ec1_count,
-            COUNT(valid_contract_years_remaining) AS valid_contract_rows
+            COUNT(valid_contract_years_remaining) AS valid_contract_rows,
+            COUNT(*) FILTER (
+                WHERE valid_contract_years_remaining IS NOT NULL
+                  AND valuation_date > DATE '{SALIMT_PROFILES_SNAPSHOT_DATE}'
+            ) AS post_snapshot_valid_contract_rows
         FROM read_parquet('{val_path.as_posix()}')
     """).fetchall()[0]
 
@@ -152,7 +169,8 @@ def test_clean_valuations_invariants_and_no_promotion_leakage() -> None:
     assert stats[6] == 0
     assert stats[7] > stats[8] > 0
     assert stats[7] + stats[8] == stats[0]
-    assert stats[9] > 0
+    assert stats[9] > 1000
+    assert stats[10] == 0, "Found valid_contract_years_remaining after salimt snapshot date"
 
 
 @pytest.mark.data
@@ -268,6 +286,14 @@ def test_cleaning_pipeline_on_synthetic_fixtures(tmp_path: Path) -> None:
     """)
     con.execute(f"""
         COPY (
+            SELECT 999001 AS player_id, DATE '2022-07-01' AS transfer_date, '22/23' AS transfer_season,
+                   8000 AS from_club_id, 9001 AS to_club_id, 'Old FC' AS from_club_name,
+                   'Test FC Alpha' AS to_club_name, 10000000.0 AS transfer_fee, 8000000.0 AS market_value_in_eur,
+                   'Test Player Alpha' AS player_name
+        ) TO '{(syn_raw / "transfers.parquet").as_posix()}' (FORMAT PARQUET)
+    """)
+    con.execute(f"""
+        COPY (
             SELECT 999001 AS player_id, '23/24' AS season_name, 'Hamstring' AS injury_reason,
                    DATE '2023-12-01' AS from_date, DATE '2023-12-15' AS end_date, 14 AS days_missed, 2 AS games_missed
         ) TO '{(syn_raw / "injuries.parquet").as_posix()}' (FORMAT PARQUET)
@@ -296,6 +322,7 @@ def test_cleaning_pipeline_on_synthetic_fixtures(tmp_path: Path) -> None:
     assert report["valuation_drops"]["excluded_other_leagues"] == 1
     assert report["valuation_drops"]["kept_gb1_ec1_valuations"] == 1
     assert report["clean_table_counts"]["players"] == 1
+    assert report["clean_table_counts"]["transfers"] == 1
 
     val_row = con.sql(
         f"SELECT valid_contract_years_remaining FROM read_parquet('{(syn_clean / 'valuations.parquet').as_posix()}')"

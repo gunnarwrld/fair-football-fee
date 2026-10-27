@@ -4,8 +4,8 @@ Verifies raw source files in `data/raw/sources/` against `PINNED_SOURCES`, conve
 canonical tables into typed ZSTD Parquet files in `data/raw/*.parquet` via DuckDB,
 logs CSV reject counts via `store_rejects=true` (never silently dropping rows with
 unlogged `ignore_errors=true`), and writes `data/raw/MANIFEST.json` with pinned
-source URLs, source SHA-256 hashes, output Parquet SHA-256 hashes, and deterministic
-`data_version`.
+source URLs (commit-SHA pinned for `salimt`), source SHA-256 hashes, output Parquet
+SHA-256 hashes, and deterministic `data_version`.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from typing import Any
 import duckdb
 
 from src.config import settings
-from src.data.pit_sql import EC_COMP_IDS, PINNED_SOURCES
+from src.data.pit_sql import EC_ALL_COMP_IDS, PINNED_SOURCES
 
 
 def sha256_file(path: Path) -> str:
@@ -49,13 +49,18 @@ def verify_and_hash_raw_sources(
                 f"SHA-256 mismatch for pinned source {rel_path}: "
                 f"expected {expected_sha}, got {actual_sha}"
             )
-        source_records[rel_path] = {
+        rec: dict[str, Any] = {
             "url": pin_meta["url"],
             "sha256": actual_sha,
             "expected_sha256": expected_sha,
             "pin_verified": actual_sha == expected_sha,
             "size_bytes": actual_size,
         }
+        if "commit_sha" in pin_meta:
+            rec["commit_sha"] = pin_meta["commit_sha"]
+        if "snapshot_date" in pin_meta:
+            rec["snapshot_date"] = pin_meta["snapshot_date"]
+        source_records[rel_path] = rec
     return source_records
 
 
@@ -130,6 +135,10 @@ def ingest_raw_to_parquet(
             "dcaribou/games.csv.gz",
             f"SELECT * FROM read_csv_auto('{dc_dir.as_posix()}/games.csv.gz', store_rejects=true)",
         ),
+        "transfers.parquet": (
+            "dcaribou/transfers.csv.gz",
+            f"SELECT * FROM read_csv_auto('{dc_dir.as_posix()}/transfers.csv.gz', store_rejects=true)",
+        ),
         "injuries.parquet": (
             "salimt/player_injuries_updated_20260929.csv",
             f"""
@@ -181,7 +190,7 @@ def ingest_raw_to_parquet(
                 COALESCE(TRY_CAST(clean_sheets AS INTEGER), 0) AS clean_sheets,
                 COALESCE(TRY_CAST(goals_conceded AS INTEGER), 0) AS goals_conceded
             FROM read_csv_auto('{sal_dir.as_posix()}/player_performances.csv', store_rejects=true)
-            WHERE competition_id IN {EC_COMP_IDS}
+            WHERE competition_id IN {EC_ALL_COMP_IDS}
             """,
         ),
     }

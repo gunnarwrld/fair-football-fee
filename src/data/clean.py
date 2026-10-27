@@ -1,11 +1,13 @@
 """Phase 1 (Task 2b): Deterministic Cleaning Pipeline & PostgreSQL Loader.
 
 Reads `data/raw/*.parquet`, uses the shared point-in-time SQL definitions in
-`src.data.pit_sql` (avoiding static club-table promotion/relegation leakage and
-keeping audit + cleaning SQL identical), logs exact row drop counts at every
-cleaning step to `data/clean/cleaning_report.json`, writes `data/clean/*.parquet`,
-and bulk-upserts the operational serving tables (`players`, `player_seasons`,
-`valuations`) into PostgreSQL while deleting stale keys removed upstream.
+`src.data.pit_sql` (avoiding static club-table promotion/relegation leakage,
+excluding Ecuadorian Serie B `EC2L` club-seasons, and using the consistent
+single-snapshot `salimt` contract filter), logs exact row drop counts at every
+cleaning step to `data/clean/cleaning_report.json`, writes `data/clean/*.parquet`
+(including `transfers.parquet`), and bulk-upserts the operational serving tables
+(`players`, `player_seasons`, `valuations`) into PostgreSQL while deleting stale
+keys removed upstream.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from src.config import settings
-from src.data.pit_sql import register_pit_views
+from src.data.pit_sql import EC_COMP_IDS, register_pit_views
 from src.db.models import Player, PlayerSeason, Valuation
 from src.db.session import SessionLocal
 
@@ -78,6 +80,9 @@ def run_cleaning_pipeline(
         f"CREATE VIEW raw_games AS SELECT * FROM read_parquet('{raw_dir.as_posix()}/games.parquet')"
     )
     con.execute(
+        f"CREATE VIEW raw_transfers AS SELECT * FROM read_parquet('{raw_dir.as_posix()}/transfers.parquet')"
+    )
+    con.execute(
         f"CREATE VIEW raw_inj AS SELECT * FROM read_parquet('{raw_dir.as_posix()}/injuries.parquet')"
     )
     con.execute(
@@ -128,7 +133,7 @@ def run_cleaning_pipeline(
         FROM staged_valuations
     """).fetchall()[0]
 
-    # 3. Export clean GB1 + EC1 valuations.parquet (including per-row contract validity flag for Phase 2/3 ablation)
+    # 3. Export clean GB1 + EC1 valuations.parquet (including single-snapshot salimt valid_contract_years_remaining)
     val_out = clean_dir / "valuations.parquet"
     con.execute(f"""
         COPY (
@@ -142,23 +147,7 @@ def run_cleaning_pipeline(
                 season_year,
                 cycle,
                 ROUND(date_diff('day', date_of_birth, valuation_date) / 365.25, 2) AS age_at_valuation,
-                CASE
-                    WHEN dc_contract_expiration_date IS NOT NULL
-                     AND dc_contract_expiration_date > valuation_date
-                     AND tm_club_id_at_valuation = dc_current_club_id
-                     AND sal_joined IS NOT NULL
-                     AND sal_joined <= DATE '2025-09-13'
-                     AND GREATEST(
-                         sal_joined,
-                         COALESCE(
-                             CASE WHEN sal_last_extension <= DATE '2025-09-12'
-                                  THEN sal_last_extension ELSE NULL END,
-                             sal_joined
-                         )
-                     ) <= valuation_date
-                    THEN ROUND(date_diff('day', valuation_date, dc_contract_expiration_date) / 365.25, 2)
-                    ELSE NULL
-                END AS valid_contract_years_remaining
+                valid_contract_years_remaining
             FROM staged_valuations
             WHERE market_value_eur > 0
               AND dup_rn = 1
@@ -182,8 +171,7 @@ def run_cleaning_pipeline(
         GROUP BY tm_player_id
     """)
 
-    # Also save all_valuations.parquet for the target cohort across all career leagues
-    # (used in Phase 2 solely for the secondary Value-Update model's lagged valuation lookup)
+    # Save all_valuations.parquet for the target cohort across all career leagues
     all_val_out = clean_dir / "all_valuations.parquet"
     con.execute(f"""
         COPY (
@@ -344,7 +332,17 @@ def run_cleaning_pipeline(
                     SUM(ep.goals_conceded) AS goals_conceded
                 FROM raw_ec1_perf ep
                 JOIN target_cohort tc ON ep.player_id = tc.tm_player_id
+                JOIN ec1_club_seasons ecs
+                  ON CAST(ep.tm_club_id AS BIGINT) = ecs.club_id
+                 AND (
+                     CASE
+                         WHEN LENGTH(TRIM(ep.season_name)) = 4
+                         THEN CAST(TRIM(ep.season_name) AS INTEGER)
+                         ELSE 2000 + CAST(SUBSTR(TRIM(ep.season_name), 1, 2) AS INTEGER)
+                     END
+                 ) = ecs.season_year
                 WHERE ep.tm_club_id IS NOT NULL
+                  AND ep.competition_id IN {EC_COMP_IDS}
                 GROUP BY 1, 2, 3, 4
             ),
             combined AS (
@@ -390,7 +388,28 @@ def run_cleaning_pipeline(
         ) TO '{seasons_out.as_posix()}' (FORMAT PARQUET, COMPRESSION ZSTD)
     """)
 
-    # 8. Export clean injuries.parquet for target cohort (lakehouse-only; never exposed via API)
+    # 8. Export clean transfers.parquet for target cohort (for Phase 2 point-in-time days_since_joined_club)
+    transfers_out = clean_dir / "transfers.parquet"
+    con.execute(f"""
+        COPY (
+            SELECT
+                CAST(t.player_id AS BIGINT) AS tm_player_id,
+                CAST(t.transfer_date AS DATE) AS transfer_date,
+                NULLIF(TRIM(t.transfer_season), '') AS transfer_season,
+                CAST(t.from_club_id AS BIGINT) AS from_club_id,
+                CAST(t.to_club_id AS BIGINT) AS to_club_id,
+                NULLIF(TRIM(t.from_club_name), '') AS from_club_name,
+                NULLIF(TRIM(t.to_club_name), '') AS to_club_name,
+                TRY_CAST(t.transfer_fee AS DOUBLE) AS transfer_fee_eur
+            FROM raw_transfers t
+            JOIN target_cohort tc ON t.player_id = tc.tm_player_id
+            WHERE t.transfer_date IS NOT NULL
+              AND CAST(t.transfer_date AS DATE) < DATE '2026-07-01'
+            ORDER BY t.player_id, t.transfer_date
+        ) TO '{transfers_out.as_posix()}' (FORMAT PARQUET, COMPRESSION ZSTD)
+    """)
+
+    # 9. Export clean injuries.parquet for target cohort (lakehouse-only; never exposed via API)
     inj_out = clean_dir / "injuries.parquet"
     con.execute(f"""
         COPY (
@@ -430,6 +449,7 @@ def run_cleaning_pipeline(
             "all_valuations": con.sql(f"SELECT COUNT(*) FROM read_parquet('{all_val_out.as_posix()}')").fetchall()[0][0],
             "appearances": con.sql(f"SELECT COUNT(*) FROM read_parquet('{app_out.as_posix()}')").fetchall()[0][0],
             "player_seasons": con.sql(f"SELECT COUNT(*) FROM read_parquet('{seasons_out.as_posix()}')").fetchall()[0][0],
+            "transfers": con.sql(f"SELECT COUNT(*) FROM read_parquet('{transfers_out.as_posix()}')").fetchall()[0][0],
             "injuries": con.sql(f"SELECT COUNT(*) FROM read_parquet('{inj_out.as_posix()}')").fetchall()[0][0],
         },
     }

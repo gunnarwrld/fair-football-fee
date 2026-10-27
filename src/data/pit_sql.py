@@ -1,11 +1,13 @@
 """Shared Point-in-Time SQL CTEs and Pinned Source Registry.
 
-Used by both `scripts/audit_datasets.py` and `src/data/clean.py` ( plus `src/data/ingest.py`)
+Used by both `scripts/audit_datasets.py` and `src/data/clean.py` (plus `src/data/ingest.py`)
 so the audit and the cleaning pipeline share a single source of truth for:
-  - Pinned upstream dataset URLs and expected SHA-256 digests (`PINNED_SOURCES`)
-  - Ecuadorian Liga Pro competition stage codes (`EC_COMP_IDS`)
+  - Pinned upstream dataset URLs (including commit-pinned `salimt` URLs) and SHA-256 digests
+  - Ecuadorian Liga Pro Tier-1 (`EC_COMP_IDS`) vs Tier-2 Serie B (`EC_TIER2_COMP_IDS`) codes
   - Point-in-time `(club_id, season_year) -> league_code` resolution (`club_season_pit`)
-  - Staged valuation enrichment (`staged_valuations`) without static-club promotion/relegation leakage
+    filtering `tier_level = 1` for top-tier attribution and excluding Serie B club-years
+  - Consistent single-snapshot `salimt` per-row contract filter (`valid_contract_years_remaining`)
+    bounded by `SALIMT_PROFILES_SNAPSHOT_DATE` (`2025-10-18`, commit `62ca05786a`)
 """
 
 from __future__ import annotations
@@ -14,17 +16,29 @@ from typing import Any
 
 import duckdb
 
+# Ecuador Serie A (Tier 1) stage codes vs Serie B (Tier 2) codes in salimt/player_performances.csv
 EC_COMP_IDS: tuple[str, ...] = ("EL1A", "EL1S", "EC1N", "ECPE", "ECSE", "LPPL", "ECPL")
+EC_TIER2_COMP_IDS: tuple[str, ...] = ("EC2L", "ECB2", "ECB3")
+EC_ALL_COMP_IDS: tuple[str, ...] = EC_COMP_IDS + EC_TIER2_COMP_IDS
 
+# Transfermarkt pseudo-club IDs representing non-active / unattached status
+INACTIVE_CLUB_IDS: tuple[int, ...] = (123, 515, 75, 2113)
+INACTIVE_CLUB_NAMES: tuple[str, ...] = ("Retired", "Without Club", "Unknown", "Career break")
+
+# Pinned upstream URLs and commit metadata
 DCARIBOU_BASE_R2 = "https://pub-e682421888d945d684bcae8890b0ec20.r2.dev/data"
+SALIMT_COMMIT_SHA = "da9227e1f42baf74561324290dbf1ad2e3c00edd"
+SALIMT_PROFILES_COMMIT_SHA = "62ca05786a63f65ebf1220eaa8de6a4ef29abf69"
+SALIMT_PROFILES_SNAPSHOT_DATE = "2025-10-18"
+
 SALIMT_BASE_RAW = (
-    "https://raw.githubusercontent.com/salimt/football-datasets/main/datalake/transfermarkt"
+    f"https://raw.githubusercontent.com/salimt/football-datasets/{SALIMT_COMMIT_SHA}/datalake/transfermarkt"
 )
 SALIMT_BASE_LFS = (
-    "https://media.githubusercontent.com/media/salimt/football-datasets/main/datalake/transfermarkt"
+    f"https://media.githubusercontent.com/media/salimt/football-datasets/{SALIMT_COMMIT_SHA}/datalake/transfermarkt"
 )
 
-# Frozen upstream snapshot pinned by URL, SHA-256 digest, and byte size
+# Frozen upstream snapshot pinned by immutable URL (commit SHA for GitHub), SHA-256 digest, and byte size
 PINNED_SOURCES: dict[str, dict[str, Any]] = {
     "dcaribou/competitions.csv.gz": {
         "url": f"{DCARIBOU_BASE_R2}/competitions.csv.gz",
@@ -63,26 +77,32 @@ PINNED_SOURCES: dict[str, dict[str, Any]] = {
     },
     "salimt/player_profiles.csv": {
         "url": f"{SALIMT_BASE_RAW}/player_profiles/player_profiles.csv",
+        "commit_sha": SALIMT_PROFILES_COMMIT_SHA,
+        "snapshot_date": SALIMT_PROFILES_SNAPSHOT_DATE,
         "sha256": "7ef9afbacf97577d099f21a0ef0ea0d46381bd4806a119f095b9562762a20096",
         "size_bytes": 26380409,
     },
     "salimt/player_market_value.csv": {
         "url": f"{SALIMT_BASE_RAW}/player_market_value/player_market_value.csv",
+        "commit_sha": SALIMT_COMMIT_SHA,
         "sha256": "e9e1868c883f0f40559127a407f5755c6a7f2e1ded1b4cec842d9185c4edb984",
         "size_bytes": 23873747,
     },
     "salimt/player_injuries_updated_20260929.csv": {
         "url": f"{SALIMT_BASE_RAW}/player_injuries/player_injuries_updated_20260929.csv",
+        "commit_sha": SALIMT_COMMIT_SHA,
         "sha256": "c622ed5684ec42e456ee23a9f5a78d61f74293d55e38882a7829ad71fb40d815",
         "size_bytes": 9455168,
     },
     "salimt/team_competitions_seasons.csv": {
         "url": f"{SALIMT_BASE_RAW}/team_competitions_seasons/team_competitions_seasons.csv",
+        "commit_sha": SALIMT_COMMIT_SHA,
         "sha256": "83f06c8108e87d74ebccd7d02df9b7a5fe5769bbc7004771af64230b1eff6319",
         "size_bytes": 11032370,
     },
     "salimt/player_performances.csv": {
         "url": f"{SALIMT_BASE_LFS}/player_performances/player_performances.csv",
+        "commit_sha": SALIMT_COMMIT_SHA,
         "sha256": "21eda6556654478fe986de8972d3b94aea6551ebcd74d5eb153b65edb53d132b",
         "size_bytes": 157647289,
     },
@@ -96,17 +116,18 @@ def register_pit_views(
     games_view: str = "raw_games",
     tcs_view: str = "raw_tcs",
     tcs_comp_col: str = "competition_id",
+    tcs_tier_col: str = "tier_level",
     ec_perf_view: str = "raw_ec1_perf",
     ec_club_col: str = "tm_club_id",
-    ec_filter_clause: str = "1 = 1",
     val_view: str = "raw_val",
     players_view: str = "raw_players",
     sal_prof_view: str = "raw_sal_prof",
 ) -> None:
-    """Create `club_season_pit`, `ec1_clubs`, and `staged_valuations` temp views on `con`.
+    """Create `club_season_pit`, `ec1_club_seasons`, `ec1_clubs`, and `staged_valuations` temp views.
 
-    Guarantees identical point-in-time league resolution and duplicate/anomaly tagging
-    across `scripts/audit_datasets.py` and `src/data/clean.py`.
+    Guarantees identical point-in-time league resolution, Tier-1 filtering (`tier_level = 1`
+    and excluding Ecuadorian `Serie B` `EC2L` club-seasons), and single-snapshot `salimt`
+    per-row contract validation across `scripts/audit_datasets.py` and `src/data/clean.py`.
     """
     con.execute(f"""
         CREATE OR REPLACE TEMP VIEW club_season_pit AS
@@ -133,15 +154,21 @@ def register_pit_views(
                 club_id,
                 season_id AS season,
                 CASE
-                    WHEN {tcs_comp_col} IN {EC_COMP_IDS} THEN 'EC1'
-                    ELSE {tcs_comp_col}
+                    WHEN {tcs_comp_col} IN {EC_COMP_IDS} AND CAST({tcs_tier_col} AS INTEGER) = 1 THEN 'EC1'
+                    WHEN CAST({tcs_tier_col} AS INTEGER) = 1 THEN {tcs_comp_col}
+                    ELSE 'TIER' || CAST({tcs_tier_col} AS VARCHAR) || '_' || {tcs_comp_col}
                 END AS competition_id,
+                {tcs_comp_col} AS raw_competition_id,
+                CAST({tcs_tier_col} AS INTEGER) AS tier_level,
                 ROW_NUMBER() OVER (
                     PARTITION BY club_id, season_id
-                    ORDER BY season_total_matches DESC NULLS LAST
+                    ORDER BY
+                        CASE WHEN {tcs_tier_col} IS NOT NULL THEN 0 ELSE 1 END ASC,
+                        season_total_matches DESC NULLS LAST
                 ) AS rn
             FROM {tcs_view}
             WHERE {tcs_comp_col} IS NOT NULL
+              AND {tcs_tier_col} IS NOT NULL
         ),
         all_club_seasons AS (
             SELECT club_id, season FROM dc_club_season WHERE rn = 1
@@ -152,7 +179,8 @@ def register_pit_views(
             acs.club_id,
             acs.season,
             dcs.competition_id AS games_derived_league,
-            tcs.competition_id AS tcs_derived_league,
+            tcs.raw_competition_id AS tcs_derived_league,
+            tcs.tier_level AS tcs_tier_level,
             COALESCE(dcs.competition_id, tcs.competition_id) AS pit_league_code
         FROM all_club_seasons acs
         LEFT JOIN dc_club_season dcs
@@ -161,11 +189,43 @@ def register_pit_views(
           ON acs.club_id = tcs.club_id AND acs.season = tcs.season AND tcs.rn = 1
     """)
 
+    # Point-in-time Ecuadorian Tier-1 (Serie A) club-years, explicitly excluding any club-year
+    # that appeared in Ecuador Serie B (`EC2L`, `ECB2`, `ECB3`)
     con.execute(f"""
+        CREATE OR REPLACE TEMP VIEW ec1_club_seasons AS
+        WITH parsed_ec AS (
+            SELECT
+                CAST({ec_club_col} AS BIGINT) AS club_id,
+                competition_id,
+                CASE
+                    WHEN regexp_matches(TRIM(season_name), '^[0-9]{{4}}$')
+                    THEN CAST(TRIM(season_name) AS INTEGER)
+                    WHEN regexp_matches(TRIM(season_name), '^[0-9]{{2}}/[0-9]{{2}}$')
+                    THEN CASE
+                        WHEN CAST(split_part(TRIM(season_name), '/', 1) AS INTEGER) >= 50
+                        THEN 1900 + CAST(split_part(TRIM(season_name), '/', 1) AS INTEGER)
+                        ELSE 2000 + CAST(split_part(TRIM(season_name), '/', 1) AS INTEGER)
+                    END
+                    ELSE NULL
+                END AS season_year
+            FROM {ec_perf_view}
+            WHERE {ec_club_col} IS NOT NULL
+              AND competition_id IN {EC_ALL_COMP_IDS}
+        )
+        SELECT DISTINCT club_id, season_year
+        FROM parsed_ec
+        WHERE competition_id IN {EC_COMP_IDS}
+          AND season_year IS NOT NULL
+        EXCEPT
+        SELECT DISTINCT club_id, season_year
+        FROM parsed_ec
+        WHERE competition_id IN {EC_TIER2_COMP_IDS}
+          AND season_year IS NOT NULL
+    """)
+
+    con.execute("""
         CREATE OR REPLACE TEMP VIEW ec1_clubs AS
-        SELECT DISTINCT CAST({ec_club_col} AS BIGINT) AS club_id
-        FROM {ec_perf_view}
-        WHERE {ec_club_col} IS NOT NULL AND ({ec_filter_clause})
+        SELECT DISTINCT club_id FROM ec1_club_seasons
     """)
 
     con.execute(f"""
@@ -188,10 +248,12 @@ def register_pit_views(
             END AS cycle,
             csp.games_derived_league,
             csp.tcs_derived_league,
-            (ec.club_id IS NOT NULL) AS is_ec1_club,
+            csp.tcs_tier_level,
+            (ec_any.club_id IS NOT NULL) AS is_ec1_club,
+            (ecs.club_id IS NOT NULL) AS is_pit_ec1_club_season,
             COALESCE(
                 csp.pit_league_code,
-                CASE WHEN ec.club_id IS NOT NULL THEN 'EC1' ELSE 'OTHER' END
+                CASE WHEN ecs.club_id IS NOT NULL THEN 'EC1' ELSE 'OTHER' END
             ) AS league_at_valuation,
             CAST(p.date_of_birth AS DATE) AS date_of_birth,
             CAST(p.contract_expiration_date AS DATE) AS dc_contract_expiration_date,
@@ -201,6 +263,27 @@ def register_pit_views(
             CAST(sp.contract_expires AS DATE) AS sal_contract_expires,
             CAST(sp.joined AS DATE) AS sal_joined,
             CAST(sp.date_of_last_contract_extension AS DATE) AS sal_last_extension,
+            CASE
+                WHEN CAST(v.date AS DATE) <= DATE '{SALIMT_PROFILES_SNAPSHOT_DATE}'
+                 AND CAST(sp.contract_expires AS DATE) IS NOT NULL
+                 AND CAST(sp.contract_expires AS DATE) > CAST(v.date AS DATE)
+                 AND CAST(v.current_club_id AS BIGINT) = CAST(sp.current_club_id AS BIGINT)
+                 AND CAST(sp.joined AS DATE) IS NOT NULL
+                 AND CAST(sp.joined AS DATE) <= DATE '{SALIMT_PROFILES_SNAPSHOT_DATE}'
+                 AND (
+                     sp.date_of_last_contract_extension IS NULL
+                     OR CAST(sp.date_of_last_contract_extension AS DATE) <= DATE '{SALIMT_PROFILES_SNAPSHOT_DATE}'
+                 )
+                 AND GREATEST(
+                     CAST(sp.joined AS DATE),
+                     COALESCE(CAST(sp.date_of_last_contract_extension AS DATE), CAST(sp.joined AS DATE))
+                 ) <= CAST(v.date AS DATE)
+                THEN ROUND(
+                    date_diff('day', CAST(v.date AS DATE), CAST(sp.contract_expires AS DATE)) / 365.25,
+                    2
+                )
+                ELSE NULL
+            END AS valid_contract_years_remaining,
             ROW_NUMBER() OVER (
                 PARTITION BY v.player_id, CAST(v.date AS DATE)
                 ORDER BY v.market_value_in_eur DESC NULLS LAST
@@ -211,6 +294,9 @@ def register_pit_views(
         LEFT JOIN club_season_pit csp
           ON v.current_club_id = csp.club_id
          AND (CASE WHEN EXTRACT(MONTH FROM v.date) >= 7 THEN EXTRACT(YEAR FROM v.date) ELSE EXTRACT(YEAR FROM v.date) - 1 END) = csp.season
-        LEFT JOIN ec1_clubs ec
-          ON v.current_club_id = ec.club_id
+        LEFT JOIN ec1_clubs ec_any
+          ON v.current_club_id = ec_any.club_id
+        LEFT JOIN ec1_club_seasons ecs
+          ON v.current_club_id = ecs.club_id
+         AND LEAST(CAST(EXTRACT(YEAR FROM v.date) AS INTEGER), 2025) = ecs.season_year
     """)
