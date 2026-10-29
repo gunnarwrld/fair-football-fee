@@ -60,6 +60,25 @@ class MarketValueOut(BaseModel):
     date: date
 
 
+class InputsOut(BaseModel):
+    """The what-if inputs behind this valuation: current values, or the scenario's for a what-if."""
+
+    age_years: float | None
+    minutes_last_12m: float | None
+    appearances_last_12m: float | None
+    goals_last_12m: float | None
+    assists_last_12m: float | None
+
+
+class ContextOut(BaseModel):
+    """Shown read-only: none of these can be changed in a what-if."""
+
+    injury_days_12m: float | None = Field(description="None when the player isn't in the injury source")
+    injury_days_24m: float | None
+    injury_count_24m: float | None
+    contract_expires_at: date | None = Field(description="Current contract end; not a model feature")
+
+
 class ValuationOut(BaseModel):
     player: PlayerOut
     as_of_date: date
@@ -74,6 +93,8 @@ class ValuationOut(BaseModel):
     drivers: list[DriverOut] = Field(description="Largest drivers first")
     other_drivers_effect_pct: float
     adjustment: AdjustmentOut
+    inputs: InputsOut
+    context: ContextOut
     disclaimer: str = DISCLAIMER
 
 
@@ -146,4 +167,5 @@ class ModelOut(BaseModel):
     recentering: dict[str, Any]
     test_metrics: dict[str, Any]
     features: list[str]
+    whatif_bounds: dict[str, tuple[float, float]] = Field(description="Accepted range of each what-if input")
     disclaimer: str = DISCLAIMER

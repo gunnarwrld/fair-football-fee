@@ -70,6 +70,26 @@ Results: `reports/phase4_explain_intervals.md` and `reports/model_card_v1.0.0.md
 - **Measured** (dev server, one sequential client): cached valuation p50 2.4 ms, uncached what-if p50 16.4 ms, name search p50 10.1 ms. Real load testing (k6) is Phase 7.
 - **Deferred to Phase 7:** `Dockerfile.api` (the compose `app` profile already references it) and a trusted-proxy setting for the rate limiter.
 
+## Phase 6: Next.js frontend (2026-10-29)
+- **Stack:** Next.js 16.4 (App Router, Turbopack, Cache Components as scaffolded), React 19.3, Tailwind 4, TypeScript, SWR, vitest; current stable versions checked on npm that day. The scaffold's Google font was replaced by the system sans, so the build needs no network (Phase 7 Docker) and the dataviz guidance's typeface rule holds. `@types/node` moved to ^24 because vitest 5 needs ≥ 22 (no `--force`).
+- **The browser calls the API directly**, because Phase 5's rate limit is per client IP. Pages are static shells. The player page reads its route param inside `<Suspense>`, as Cache Components requires, and the production build confirms it: `/` and `/about` are static and `/players/[id]` is a partial prerender. SWR deduplicates the model-info request shared by the footer, the about page and the what-if bounds, keeps the previous result while refetching (no skeleton flash), and doesn't retry 4xx answers.
+- **Types are generated from the API's OpenAPI schema** (`openapi-typescript`, `npm run api:types`), so a backend change that breaks the UI fails the type-check instead of the browser.
+- **API additions for the UI:**
+  - `inputs`: the five what-if inputs behind a valuation, so the sliders start at the player's values.
+  - `context`: injury totals and contract end, shown read-only.
+  - On `GET /v1/model`: `whatif_bounds`, so the UI and the API share one range definition, and `point_without_recentering`.
+  - Because the response shape changed, cache keys gained a schema version (`valuation:s2:…`), so a deploy never parses JSON cached by the previous version.
+- **Honest-comparison fix:** the first About page compared the served error (with recentering) to Ridge without it. Most of that gap is the adjustment, which would apply to any model, so the page now shows the served error next to the same model without the adjustment.
+- **Charts follow the dataviz guidance:**
+  - The palette was validated with its script in both modes. Driver bars use a diverging blue/red pair (CVD ΔE 21.6 light, 19.2 dark); the interval uses a three-step one-hue ramp.
+  - Driver bars are on a log scale (a doubling and a halving have the same length) and sit inside a table, so the chart is its own table view.
+  - The interval chart uses a legend that carries the numbers instead of colliding direct labels.
+  - Hover and keyboard-focus tooltips.
+- **Bug caught in the browser:** `Intl` compact currency formatting differs between runtimes (Node prints "€22.4M", Chrome "€22.4m"). It was replaced by a small deterministic formatter, unit-tested including rounding across units (€999,960 is "€1M").
+- **Verified in the browser against the live API:** search, player page, a what-if result and the 422 explanation for an impossible scenario, the about page, dark and light mode, and 375 px width (the driver table moves values under labels on phones).
+- **Tests:** 13 frontend unit tests (formatters, axis ticks, and the identity the UI relies on: baseline × every driver's factor = estimate), plus API tests for the new fields.
+- **Deferred to Phase 7:** the frontend Dockerfile and the compose `app` profile (`NEXT_PUBLIC_API_BASE_URL` is baked in at build time, so it becomes a build argument), and CI running `make web-check`.
+
 ## Ops
 - Host Postgres port changed to 5433 (2026-10-29). The owner's Mac already runs a native Postgres on 5432 without the `fff_user` role, so `--load-db` connected to the wrong server.
 - From 2026-10-29 Claude develops the project directly (owner's instruction), keeping `CLAUDE.md`, this log and the claude.ai Project doc current so no context is lost.
