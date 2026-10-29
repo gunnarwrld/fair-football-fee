@@ -47,3 +47,4 @@ Review of the Phase 2 data found that the dataset's population changes right at 
 ## Ops
 - Host Postgres port changed to 5433 (2026-10-29). The owner's Mac already runs a native Postgres on 5432 without the `fff_user` role, so `--load-db` connected to the wrong server.
 - From 2026-10-29 Claude develops the project directly (owner's instruction), keeping `CLAUDE.md`, this log and the claude.ai Project doc current so no context is lost.
+- 2026-10-29: on macOS, XGBoost and LightGBM wheels need the OpenMP runtime (`brew install libomp`). Model libraries are now imported lazily with an actionable error, `make doctor` checks the native libraries and Docker, and `make db` stops early with a clear message when Docker Desktop isn't running.
