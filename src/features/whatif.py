@@ -38,6 +38,14 @@ WHATIF_BOUNDS: dict[str, tuple[float, float]] = {
     "assists_last_12m": (0.0, 31.0),
 }
 MAX_MINUTES_PER_APPEARANCE = 120  # 90 minutes plus extra time
+# The feature each input sets directly (the UI starts every slider at the player's current value)
+INPUT_FEATURE: dict[str, str] = {
+    "age_years": "age_at_valuation",
+    "minutes_last_12m": "mins_last_12m",
+    "appearances_last_12m": "appearances_last_12m",
+    "goals_last_12m": "goals_last_12m",
+    "assists_last_12m": "assists_last_12m",
+}
 
 # 12-month counts a scenario can set directly, and the shrunk per-90 rate each one feeds
 _SHRUNK_RATE_OF_COUNT = {"goals_last_12m": "goals_per90_shrunk_12m", "assists_last_12m": "assists_per90_shrunk_12m"}
@@ -47,6 +55,11 @@ _RATE_ONLY = ("cards_per90_12m", "clean_sheets_per90_12m", "goals_conceded_per90
 
 class ScenarioError(ValueError):
     """A scenario that is inconsistent or outside the range the model was trained on."""
+
+
+def scenario_inputs(features: dict[str, Any]) -> dict[str, float | None]:
+    """The what-if inputs a feature row corresponds to (current values, or a scenario's)."""
+    return {name: features.get(feature) for name, feature in INPUT_FEATURE.items()}
 
 
 def _check_range(name: str, value: float, implied: bool = False) -> None:

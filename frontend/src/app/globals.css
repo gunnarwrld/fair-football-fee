@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+/*
+ * Tokens. Chart colors come from the dataviz reference palette and were validated for both modes
+ * with its validate_palette.js: the diverging pair (up/down) and the 3-step interval ramp
+ * (band-90 → band-80 → estimate). Dark is its own selected set, not an automatic inversion.
+ */
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.1);
+  --link: #1c5cab;
+  --up: #2a78d6;
+  --down: #e34948;
+  --band-90: #86b6ef;
+  --band-80: #3987e5;
+  --estimate: #184f95;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.1);
+    --link: #86b6ef;
+    --up: #3987e5;
+    --down: #e66767;
+    --band-90: #184f95;
+    --band-80: #3987e5;
+    --estimate: #9ec5f4;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.1);
+  --link: #86b6ef;
+  --up: #3987e5;
+  --down: #e66767;
+  --band-90: #184f95;
+  --band-80: #3987e5;
+  --estimate: #9ec5f4;
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-grid: var(--grid);
+  --color-axis: var(--axis);
+  --color-border: var(--border);
+  --color-link: var(--link);
+  --color-up: var(--up);
+  --color-down: var(--down);
+  --color-band-90: var(--band-90);
+  --color-band-80: var(--band-80);
+  --color-estimate: var(--estimate);
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* In the base layer so Tailwind utilities (e.g. text-ink on a link) can override them */
+@layer base {
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: var(--font-sans);
+  }
+
+  a {
+    color: var(--link);
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--link);
+    outline-offset: 2px;
+  }
+}
+
+/* Only columns of numbers that must align use equal-width digits */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

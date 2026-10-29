@@ -28,7 +28,7 @@ from src.api.main import create_app
 from src.api.repository import CurrentFeatures, PlayerHit, PlayerRow
 from src.api.runtime import ServingState
 from src.features.engineer import MAIN_MODEL_FEATURES, SHRINKAGE_M0_MINUTES
-from src.features.whatif import WHATIF_BOUNDS, ScenarioError, apply_scenario
+from src.features.whatif import INPUT_FEATURE, WHATIF_BOUNDS, ScenarioError, apply_scenario
 from src.ml.data import feature_frame
 from src.ml.predictor import Predictor
 
@@ -133,11 +133,9 @@ def test_whatif_bounds_are_the_training_range() -> None:
     from src.ml.data import load_population, split
 
     trained = split(load_population(), "train", "val_tune")
-    columns = {"age_years": "age_at_valuation", "minutes_last_12m": "mins_last_12m",
-               "appearances_last_12m": "appearances_last_12m", "goals_last_12m": "goals_last_12m",
-               "assists_last_12m": "assists_last_12m"}
     slack = {"age_years": 1.0, "minutes_last_12m": 100.0}
-    for name, col in columns.items():
+    assert set(INPUT_FEATURE) == set(WHATIF_BOUNDS)
+    for name, col in INPUT_FEATURE.items():
         lo, hi = WHATIF_BOUNDS[name]
         assert lo <= trained[col].min() and hi >= trained[col].max(), name
         assert trained[col].min() - lo <= slack.get(name, 0.0) and hi - trained[col].max() <= slack.get(name, 0.0), name
@@ -252,7 +250,7 @@ class FakeRuntime:
 class FakeRepo:
     def __init__(self) -> None:
         self.players = {
-            1: PlayerRow(1, 9001, "Fake Player One", "MID", "Test FC", "Testland"),
+            1: PlayerRow(1, 9001, "Fake Player One", "MID", "Test FC", "Testland", date(2028, 6, 30)),
             2: PlayerRow(2, 9002, "Fake Player Two", "DEF", "Test FC", "Testland"),  # no valuation
         }
         self.features = {1: CurrentFeatures(1, date(2026, 6, 3), "fake-data", 20e6, dict(FAKE_FEATURES))}
@@ -334,6 +332,16 @@ def test_valuation_is_cached_traced_and_logged(api: Any, fake_predictor: Predict
     assert [log["cache_status"] for log in api.logs] == ["MISS", "HIT"] and api.logs[0]["request_id"] == "trace-123"
 
 
+def test_valuation_carries_slider_inputs_and_read_only_context(api: Any) -> None:
+    body = api.client.get("/v1/players/1/valuation").json()
+    assert body["inputs"] == {"age_years": 24.5, "minutes_last_12m": 2000.0, "appearances_last_12m": 28.0,
+                              "goals_last_12m": 4.0, "assists_last_12m": 3.0}
+    assert body["context"] == {"injury_days_12m": None, "injury_days_24m": None, "injury_count_24m": None,
+                               "contract_expires_at": "2028-06-30"}
+    bounds = api.client.get("/v1/model").json()["whatif_bounds"]
+    assert bounds == {k: list(v) for k, v in WHATIF_BOUNDS.items()}
+
+
 def test_drivers_multiply_back_to_the_estimate(api: Any) -> None:
     body = api.client.get("/v1/players/1/valuation").json()
     effects = [d["effect_pct"] for d in body["drivers"]] + [body["other_drivers_effect_pct"], body["adjustment"]["effect_pct"]]
@@ -363,6 +371,8 @@ def test_what_if_returns_changes_and_the_difference(api: Any) -> None:
     assert body["change_pct"] == pytest.approx(body["estimate_eur"] / current - 1)
     changed = {c["feature"] for c in body["changes"]}
     assert {"mins_last_12m", "mins_last_24m", "age_at_valuation", "age_squared"} <= changed
+    assert body["inputs"]["minutes_last_12m"] == 2600 and body["inputs"]["age_years"] == 23
+    assert body["inputs"]["goals_last_12m"] == pytest.approx(4 * 2600 / 2000)  # kept its per-minute rate
     assert not any(name.startswith("injury") for name in changed)
 
 
