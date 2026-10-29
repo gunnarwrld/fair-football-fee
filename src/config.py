@@ -10,7 +10,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    database_url: str = "postgresql+psycopg://fff_user:fff_pass@localhost:5432/fair_football_fee"
+    database_url: str = "postgresql+psycopg://fff_user:fff_pass@localhost:5433/fair_football_fee"
     redis_url: str = "redis://localhost:6379/0"
     redis_cache_ttl_seconds: int = 3600
     redis_lock_timeout_seconds: int = 5
