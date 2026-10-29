@@ -34,6 +34,9 @@ data/features/*.parquet
 artifacts/**/*.ubj
 artifacts/**/*.joblib
 artifacts/**/*.pkl
+artifacts/**/*.parquet
+artifacts/**/*.db
+artifacts/**/*.db-journal
 
 # Node / Next.js
 frontend/node_modules/
