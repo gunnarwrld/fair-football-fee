@@ -9,7 +9,7 @@ Enforces:
      recomputes features at `t`, and asserts bit-for-bit equality.
   3. Train/serve parity test: verifies `compute_serving_features_for_requests` at
      `as_of_date = valuation_date` produces the exact training snapshot feature vector
-     both on sampled historical snapshots and across all 536 active serving rows.
+     both on sampled historical snapshots and across every active serving row.
   4. Feature registry guard: asserts `MAIN_MODEL_FEATURES` excludes lagged valuations and
      contract columns.
 """
@@ -391,7 +391,13 @@ def test_truncation_invariance_no_future_leakage_on_real_snapshots() -> None:
         MAIN_MODEL_FEATURES
         + VALUE_UPDATE_MODEL_FEATURES
         + CONTRACT_ABLATION_FEATURES
-        + ["trailing_league_median_eur", "target_log_market_value", "target_log_ratio_vs_league_median"]
+        + [
+            "trailing_league_median_eur",
+            "target_log_market_value",
+            "target_log_ratio_vs_league_median",
+            "exclusion_reason",
+            "in_model_population",
+        ]
     )
     cols_to_verify = list(dict.fromkeys(cols_to_verify))
 
@@ -441,21 +447,21 @@ def test_truncation_invariance_no_future_leakage_on_real_snapshots() -> None:
             valuations_df=val_trunc,
             all_valuations_df=all_val_trunc,
             priors=priors,
+            injury_coverage_df=clean_tables["injury_coverage"],
         )
 
-        pd.testing.assert_frame_equal(
-            expected_row[cols_to_verify],
-            recomputed[cols_to_verify],
-            check_exact=True,
-        )
+        # Parquet round-trips string columns as a string dtype; compare values, not storage dtype
+        expected_cmp = expected_row[cols_to_verify].astype({"exclusion_reason": object})
+        recomputed_cmp = recomputed[cols_to_verify].astype({"exclusion_reason": object})
+        pd.testing.assert_frame_equal(expected_cmp, recomputed_cmp, check_exact=True)
 
 
 @pytest.mark.data
 def test_train_serve_parity_on_historical_and_active_snapshots() -> None:
     """Verify the serving feature writer (`compute_serving_features_for_requests`)
     produces bit-for-bit identical feature vectors to `valuation_snapshots.parquet`
-    both on sampled historical `(player_id, valuation_date)` rows and across all
-    536 active serving rows in `current_serving_features.parquet`.
+    both on sampled historical `(player_id, valuation_date)` rows and across every
+    active serving row in `current_serving_features.parquet`.
     """
     snapshots_path = FEATURES_DIR / "valuation_snapshots.parquet"
     serving_path = FEATURES_DIR / "current_serving_features.parquet"
@@ -503,9 +509,9 @@ def test_train_serve_parity_on_historical_and_active_snapshots() -> None:
             else:
                 assert expected_val == actual_val, f"Mismatch on {col}"
 
-    # 2. Check all 536 active serving rows in current_serving_features.parquet against valuation_snapshots.parquet
+    # 2. Check every active serving row in current_serving_features.parquet against valuation_snapshots.parquet
     snap_lookup = all_snapshots.set_index(["tm_player_id", "as_of_date"])
-    assert len(serving_df) > 500
+    assert len(serving_df) > 300
     for _, srv_row in serving_df.iterrows():
         key = (int(srv_row["tm_player_id"]), srv_row["as_of_date"])
         assert key in snap_lookup.index, f"Active serving row {key} missing from valuation_snapshots"

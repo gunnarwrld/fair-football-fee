@@ -24,8 +24,8 @@
     "FWD": 0.204586
   },
   "train_league_median_eur": {
-    "GB1": 5000000.0,
-    "EC1": 600000.0
+    "GB1": 10000000.0,
+    "EC1": 400000.0
   },
   "shrinkage_m0_minutes": 900.0,
   "league_median_n_min": 30
