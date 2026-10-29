@@ -1,7 +1,7 @@
 # fair-football-fee — common commands (macOS/Linux). Uses the project virtualenv.
 PY ?= .venv/bin/python
 
-.PHONY: doctor help db-up db-down migrate load-db db ingest clean-data features pipeline test test-unit lint train train-retune report
+.PHONY: doctor help db-up db-down migrate load-db db ingest clean-data features pipeline test test-unit lint train train-retune report calibrate register
 
 doctor:
 	@$(PY) -c "import xgboost, lightgbm; print('xgboost', xgboost.__version__, '| lightgbm', lightgbm.__version__, '| native libs OK')" \
@@ -14,6 +14,8 @@ help:
 	@echo "pipeline     ingest -> clean -> features (Parquet only, no database)"
 	@echo "train        Phase 3: baselines + XGBoost + report (reuses committed tuning.json)"
 	@echo "train-retune Phase 3 with a fresh 80-trial Optuna search"
+	@echo "calibrate    Phase 4: TreeSHAP checks, conformal intervals, recentering, report + model card"
+	@echo "register     write the model to model_versions and mark it active (needs make db)"
 	@echo "test / lint  full pytest suite / ruff"
 
 db-up:
@@ -52,12 +54,19 @@ train-retune:
 
 report:
 	$(PY) -m src.ml.report artifacts/v1.0.0
+	$(PY) -m src.ml.report_phase4 artifacts/v1.0.0
+
+calibrate:
+	$(PY) -m src.ml.calibrate --model-version v1.0.0
+
+register:
+	$(PY) -m src.ml.registry v1.0.0 --activate
 
 test:
 	$(PY) -m pytest -q
 
 test-unit:
-	$(PY) -m pytest -q -m "not data"
+	$(PY) -m pytest -q -m "not data and not db"
 
 lint:
 	$(PY) -m ruff check src tests migrations

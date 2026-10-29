@@ -16,21 +16,23 @@ A portfolio regression system that estimates a Premier League player's **Transfe
 8. **`data_version`** comes from `data/raw/MANIFEST.json` (written by ingestion) and is never hardcoded. The active model comes from `model_versions.is_active`, not config.
 9. **salimt data has no license:** never commit its raw or derived parquet, and never expose raw injury records through the API.
 10. No synthetic data attached to real players. Test fixtures use obviously fake players.
+11. **Served estimate = model output + recentering offset (Phase 4).** The offset and the interval quantiles come from `artifacts/<v>/conformal.json` (= `model_versions.conformal_quantiles`), calibrated on val_calib only. The offset uses only out-of-sample update batches that ended before the prediction's own batch began. After any data refresh or retrain: `make calibrate` → `make register`.
 
 ## Layout
 - `src/data/` — `ingest.py` (pinned downloads → `data/raw/*.parquet` + `MANIFEST.json`), `pit_sql.py` (shared point-in-time SQL), `clean.py` (→ `data/clean/`, `--load-db`)
 - `src/features/` — `engineer.py` (single feature code path for training and serving), `pipeline.py` (snapshots, serving features, `--load-db`)
-- `src/ml/` — `data.py` (population, back-transform), `metrics.py`, `models.py` (baselines, XGBoost), `tuning.py` (Optuna, expanding-window CV inside train), `experiments.py` (candidate features decided by CV), `train.py` (entrypoint), `report.py` (→ `reports/phase3_evaluation.md`)
-- `artifacts/v1.0.0/` — `model.ubj` (gitignored), `features.json`, `metadata.json`, `metrics.json`, `tuning.json` (tracked)
+- `src/ml/` — `data.py` (population, back-transform), `metrics.py`, `models.py` (baselines, XGBoost), `tuning.py` (Optuna, expanding-window CV inside train), `experiments.py` (candidate features decided by CV), `train.py` (entrypoint), `report.py` (→ `reports/phase3_evaluation.md`); Phase 4: `explain.py` (TreeSHAP, driver grouping and labels), `conformal.py` (update batches, point-in-time offsets, conformal quantiles), `calibrate.py` (entrypoint: backtest decisions, val_calib calibration, test once), `report_phase4.py` (→ `reports/phase4_explain_intervals.md`, `reports/model_card_<v>.md`), `registry.py` (→ `model_versions`)
+- `artifacts/v1.0.0/` — `model.ubj`, `predictions.parquet`, `intervals_test.parquet` (gitignored); `features.json`, `metadata.json`, `metrics.json`, `tuning.json`, `conformal.json`, `phase4_metrics.json` (tracked)
 - `src/db/` — SQLAlchemy models and session; `migrations/` — Alembic
 - `scripts/audit_datasets.py` — DuckDB dataset/license audit → `docs/data_audit_report.md`
 - `data/` and `artifacts/` binaries are gitignored; JSON manifests and reports are tracked.
 
 ## Commands (see `Makefile`)
-- `make pipeline` ingest → clean → features · `make train` Phase 3 (reuses `tuning.json`) · `make train-retune` · `make report` · `make test` / `make test-unit` · `make lint`
+- `make pipeline` ingest → clean → features · `make train` Phase 3 (reuses `tuning.json`) · `make train-retune` · `make calibrate` Phase 4 · `make register` (needs `make db`) · `make report` · `make test` / `make test-unit` · `make lint`
+- After `make train` or a data refresh, always run `make calibrate` then `make register`: the model, intervals and offset must come from the same run.
 - Remote VM: SQLite can't run on the mounted repo (no delete permission for journals), so pass `--optuna-db ~/optuna_v1.db --tune-timeout 150` and rerun until tuning completes.
 - `make db` = docker postgres+redis → `alembic upgrade head` → load clean tables → load serving features. Host Postgres port is **5433** (5432 is taken on the owner's Mac by a native Postgres).
-- Tests marked `@pytest.mark.data` need the local lakehouse and skip on a clean clone.
+- Tests marked `@pytest.mark.data` need the local lakehouse and skip on a clean clone. Tests marked `@pytest.mark.db` need the local Postgres, run inside a rolled-back transaction, and skip when it's unreachable. `make test-unit` excludes both.
 
 ## Environment notes
 - Owner's machine: macOS (Apple Silicon, Homebrew), Python 3.12 `.venv`, Docker Desktop (must be running for `make db`). XGBoost and LightGBM need `brew install libomp`; `make doctor` checks both.
@@ -43,7 +45,8 @@ A portfolio regression system that estimates a Premier League player's **Transfe
 - Explain decisions in 2–3 plain sentences the owner could say in a defense.
 
 ## Status (update at the end of every phase)
-- Done: Phase 0 (scaffold), Phase 1 (audit, ingest, clean), Phase 2 (point-in-time features + serving writer), Phase 2.1 (era-stable population), Phase 3 (baselines, tuned XGBoost `v1.0.0`, evaluation report).
-- Phase 3 facts to carry forward (details in `reports/phase3_evaluation.md`): XGBoost and Ridge are statistically tied; XGBoost ships for TreeSHAP and missing-value handling. Out-of-time predictions are systematically too high and the shift varies by Transfermarkt update batch. The contract feature shows no detectable signal, so contract length is read-only in the UI. The value-update model beats carry-forward.
-- Next: Phase 4 — TreeSHAP (multiplicative "vs league median"), split-conformal intervals calibrated on val_calib (check coverage per batch and per predicted-value bucket), evaluate recentering by the latest completed batch's median residual, model card, register in `model_versions`. Then 5 (FastAPI + Redis), 6 (Next.js), 7 (CI, load test, docs).
-- Open follow-ups: re-derive club-at-valuation from appearances in Phase 1 (club data in old seasons is noisy; currently those rows are excluded, about 8% of train); `scripts/audit_datasets.py` has an unused `EC_COMP_IDS` import.
+- Done: Phase 0 (scaffold), Phase 1 (audit, ingest, clean), Phase 2 (point-in-time features + serving writer), Phase 2.1 (era-stable population), Phase 3 (baselines, tuned XGBoost `v1.0.0`, evaluation report), Phase 4 (TreeSHAP, batch recentering, Mondrian split-conformal intervals, model card, `v1.0.0` registered and active).
+- Phase 3 facts to carry forward (details in `reports/phase3_evaluation.md`): XGBoost and Ridge are statistically tied; XGBoost ships for TreeSHAP and missing-value handling. The contract feature shows no detectable signal, so contract length is read-only in the UI. The value-update model beats carry-forward.
+- Phase 4 facts to carry forward (details in `reports/phase4_explain_intervals.md`): the served estimate adds the recentering offset (invariant 11), which removes most of the out-of-time bias. Intervals: 80% displayed, 90% stored, one quantile per quartile of the model's predicted ratio (bin edges in `conformal.json`); interval = `expm1(pred_ratio + offset ± q[level][bin] + ln(1 + M))`. SHAP comes from `explain.shap_contributions` (XGBoost `pred_contribs`), age + age² grouped, labels in `explain.DRIVER_LABELS`; show the offset as its own driver. More injury days *raise* the estimate (they explain low minutes), so in what-if mode injury days must move with minutes or stay read-only.
+- Next: Phase 5 — FastAPI + Redis: resolve the active model and `conformal_quantiles` from `model_versions`; `GET /v1/players/{id}/valuation` from `player_current_features` (estimate, intervals, top drivers, offset line); `POST /v1/valuations` for what-if overrides; cache-aside with stampede lock and graceful fallback; write `predictions_log`. Then 6 (Next.js), 7 (CI, load test, docs).
+- Open follow-ups: re-derive club-at-valuation from appearances in Phase 1 (club data in old seasons is noisy; currently those rows are excluded, about 8% of train); `scripts/audit_datasets.py` has an unused `EC_COMP_IDS` import; over-valuation of players aged 29+ is untouched by recentering (test an age × minutes interaction or a monotone constraint past the peak, decided by train-only CV, as `v1.1`).
