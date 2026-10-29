@@ -13,6 +13,21 @@ Strict Point-in-Time Invariant (`t_data < as_of_date`):
     never reading static `days_missed`/`games_missed` or post-`as_of_date` recovery dates.
   - Empirical Bayes shrinkage priors ($M_0 = 900$ mins) and fallback league medians
     are estimated strictly on the `train` split (`as_of_date < 2023-07-01`).
+
+Phase 2.1 Era-Stable Modeling Population:
+  - The source only contains players who appear in a tracked match at some point, so
+    historical rows include fringe players kept in the data only because of later
+    appearances. Rows are therefore restricted to Premier League (`GB1`) snapshots whose
+    player had >= 450 tracked minutes in the 365 days before `as_of_date`
+    (`in_model_population`, `exclusion_reason`).
+  - The trailing league median (target normalization index) is computed on that same
+    population, point-in-time per prior valuation.
+  - Features whose missingness depends on source coverage era (transfer-based club tenure,
+    unbounded injury recency) are replaced by capped, appearance-based equivalents.
+  - The source's club-at-valuation field is less reliable in older seasons (it matches the
+    club of the player's latest tracked appearance in ~70% of 2013/14 GB1 rows vs ~99.8% in
+    2025/26). Rows are kept only when the valuation club is corroborated by the latest
+    tracked appearance before `as_of_date`, or by a transfer to that club since then.
 """
 
 from __future__ import annotations
@@ -31,10 +46,43 @@ TRAIN_CUTOFF_DATE: str = "2023-07-01"
 VAL_TUNE_CUTOFF_DATE: str = "2024-07-01"
 VAL_CALIB_CUTOFF_DATE: str = "2025-07-01"
 
+# Phase 2.1: era-stable modeling population and capped coverage-dependent features
+POPULATION_MIN_TRACKED_MINUTES_12M: int = 450
+SUPPORTED_LEAGUES: tuple[str, ...] = ("GB1",)
+CLUB_TENURE_CAP_DAYS: int = 730
+INJURY_RECENCY_CAP_DAYS: int = 730
+
+
+def _sql_in_list(values: tuple[str, ...]) -> str:
+    return "(" + ", ".join(f"'{v}'" for v in values) + ")"
+
+
+def population_valuations_sql(vals_view: str, app_view: str) -> str:
+    """Valuations whose player had >= `POPULATION_MIN_TRACKED_MINUTES_12M` tracked minutes in
+    the 365 days strictly before that valuation date (point-in-time per valuation).
+
+    Used for both the trailing league median index and its train-split fallback, so the
+    normalization index tracks the same population the model is trained and served on.
+    """
+    return f"""
+        SELECT
+            v.league_at_valuation,
+            CAST(v.valuation_date AS DATE) AS valuation_date,
+            v.market_value_eur
+        FROM {vals_view} v
+        JOIN {app_view} a
+          ON CAST(v.tm_player_id AS BIGINT) = CAST(a.tm_player_id AS BIGINT)
+         AND CAST(a.match_date AS DATE) < CAST(v.valuation_date AS DATE)
+         AND CAST(a.match_date AS DATE)
+             >= CAST(CAST(v.valuation_date AS DATE) - INTERVAL 365 DAY AS DATE)
+        GROUP BY v.tm_player_id, v.valuation_date, v.league_at_valuation, v.market_value_eur
+        HAVING SUM(a.minutes_played) >= {POPULATION_MIN_TRACKED_MINUTES_12M}
+    """
+
+# `league_code` is constant within the GB1-only modeling population, so it is not a feature.
 MAIN_MODEL_CATEGORICAL_FEATURES: list[str] = [
     "position_group",
     "preferred_foot",
-    "league_code",
 ]
 
 MAIN_MODEL_NUMERIC_FEATURES: list[str] = [
@@ -42,8 +90,7 @@ MAIN_MODEL_NUMERIC_FEATURES: list[str] = [
     "age_at_valuation",
     "age_squared",
     "height_cm",
-    "days_since_joined_club",
-    "joined_within_365d_flag",
+    "club_tenure_days_capped",
     # Completed prior-season stats (populated for both GB1 and EC1)
     "prior_season_appearances",
     "prior_season_minutes",
@@ -52,8 +99,7 @@ MAIN_MODEL_NUMERIC_FEATURES: list[str] = [
     "prior_2seasons_minutes",
     "prior_season_goals_per90_shrunk",
     "prior_season_assists_per90_shrunk",
-    # Match-level rolling 12m/24m stats (with coverage indicator)
-    "has_match_level_appearances",
+    # Match-level rolling 12m/24m stats (always covered inside the modeling population)
     "mins_last_12m",
     "mins_last_24m",
     "appearances_last_12m",
@@ -66,15 +112,13 @@ MAIN_MODEL_NUMERIC_FEATURES: list[str] = [
     "clean_sheets_per90_12m",
     "goals_conceded_per90_12m",
     "minutes_trend_12m_vs_prev12m",
-    "has_advanced_stats",
-    # Clipped point-in-time injury burden
-    "has_injury_history_flag",
+    # Clipped point-in-time injury burden (NULL when the player is not in the injury source)
     "injury_days_12m",
     "injury_days_24m",
     "injury_count_12m",
     "injury_count_24m",
     "is_currently_injured_at_t",
-    "days_since_last_injury_end",
+    "days_since_last_injury_end_capped",
 ]
 
 MAIN_MODEL_FEATURES: list[str] = MAIN_MODEL_CATEGORICAL_FEATURES + MAIN_MODEL_NUMERIC_FEATURES
@@ -169,8 +213,8 @@ def compute_empirical_bayes_priors(
         SELECT
             league_at_valuation,
             CAST(MEDIAN(market_value_eur) AS DOUBLE) AS median_val
-        FROM src_vals
-        WHERE CAST(valuation_date AS DATE) < DATE '{TRAIN_CUTOFF_DATE}'
+        FROM ({population_valuations_sql("src_vals", "src_app")}) pv
+        WHERE valuation_date < DATE '{TRAIN_CUTOFF_DATE}'
         GROUP BY league_at_valuation
     """).fetchall()
 
@@ -214,8 +258,13 @@ def engineer_features_for_snapshots(
     valuations_df: pd.DataFrame,
     all_valuations_df: pd.DataFrame,
     priors: EmpiricalBayesPriors | None = None,
+    injury_coverage_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Compute point-in-time features strictly from records dated `< as_of_date`.
+
+    `injury_coverage_df` lists the `tm_player_id`s present in the injury source. Players
+    outside it get NULL injury features instead of a misleading zero. When omitted, every
+    player in `players_df` is treated as covered.
 
     Required columns in `snapshots_df`:
       - `tm_player_id` (int)
@@ -272,6 +321,17 @@ def engineer_features_for_snapshots(
 
     m0 = float(priors.shrinkage_m0_minutes)
     n_min = int(priors.league_median_n_min)
+    min_pop_minutes = int(POPULATION_MIN_TRACKED_MINUTES_12M)
+    supported_leagues_sql = _sql_in_list(SUPPORTED_LEAGUES)
+
+    if injury_coverage_df is None:
+        injury_coverage_df = players_df[["tm_player_id"]]
+    coverage_df = (
+        injury_coverage_df[["tm_player_id"]]
+        .dropna()
+        .astype({"tm_player_id": "int64"})
+        .drop_duplicates()
+    )
 
     con = duckdb.connect()
     con.register("raw_snap", work_snap)
@@ -284,6 +344,7 @@ def engineer_features_for_snapshots(
     con.register("src_all_vals", all_valuations_df)
     con.register("pos_priors", priors_df)
     con.register("league_priors", league_priors_df)
+    con.register("src_inj_cov", coverage_df)
 
     result_df = con.sql(f"""
         WITH snap AS (
@@ -459,7 +520,56 @@ def engineer_features_for_snapshots(
             FROM injury_intervals
             GROUP BY snapshot_id
         ),
-        -- 5. Trailing 365-day league median market value strictly < as_of_date
+        -- 4b. Tracked-appearance coverage and appearance-based club tenure strictly < as_of_date
+        ever_app AS (
+            SELECT
+                s.snapshot_id,
+                MIN(CAST(a.match_date AS DATE)) AS first_tracked_app_date
+            FROM snap s
+            JOIN src_app a
+              ON s.tm_player_id = CAST(a.tm_player_id AS BIGINT)
+             AND CAST(a.match_date AS DATE) < s.as_of_date
+            GROUP BY s.snapshot_id
+        ),
+        club_apps AS (
+            SELECT
+                s.snapshot_id,
+                MIN(CAST(a.match_date AS DATE)) AS first_club_app_date
+            FROM snap s
+            JOIN src_app a
+              ON s.tm_player_id = CAST(a.tm_player_id AS BIGINT)
+             AND s.tm_club_id = CAST(a.tm_club_id AS BIGINT)
+             AND CAST(a.match_date AS DATE) < s.as_of_date
+            GROUP BY s.snapshot_id
+        ),
+        last_app AS (
+            SELECT
+                s.snapshot_id,
+                ARG_MAX(CAST(a.tm_club_id AS BIGINT), CAST(a.match_date AS DATE)) AS last_app_club_id,
+                MAX(CAST(a.match_date AS DATE)) AS last_app_date
+            FROM snap s
+            JOIN src_app a
+              ON s.tm_player_id = CAST(a.tm_player_id AS BIGINT)
+             AND CAST(a.match_date AS DATE) < s.as_of_date
+             AND CAST(a.match_date AS DATE) >= CAST(s.as_of_date - INTERVAL 365 DAY AS DATE)
+            GROUP BY s.snapshot_id
+        ),
+        signed_since_last_app AS (
+            SELECT s.snapshot_id, 1 AS signed_flag
+            FROM snap s
+            JOIN last_app la ON s.snapshot_id = la.snapshot_id
+            JOIN src_transfers t
+              ON s.tm_player_id = CAST(t.tm_player_id AS BIGINT)
+             AND CAST(t.to_club_id AS BIGINT) = s.tm_club_id
+             AND CAST(t.transfer_date AS DATE) >= la.last_app_date
+             AND CAST(t.transfer_date AS DATE) < s.as_of_date
+            GROUP BY s.snapshot_id
+        ),
+        injury_cov AS (
+            SELECT DISTINCT CAST(tm_player_id AS BIGINT) AS tm_player_id FROM src_inj_cov
+        ),
+        -- 5. Trailing 365-day league median over the modeling population strictly < as_of_date
+        val_pop AS ({population_valuations_sql("src_vals", "src_app")}),
         distinct_league_dates AS (
             SELECT DISTINCT league_code, as_of_date FROM snap
         ),
@@ -480,10 +590,10 @@ def engineer_features_for_snapshots(
                 END AS trailing_league_median_eur
             FROM distinct_league_dates d
             JOIN league_priors lp ON d.league_code = lp.league_code
-            LEFT JOIN src_vals v
+            LEFT JOIN val_pop v
               ON d.league_code = v.league_at_valuation
-             AND CAST(v.valuation_date AS DATE) >= CAST(d.as_of_date - INTERVAL 365 DAY AS DATE)
-             AND CAST(v.valuation_date AS DATE) < d.as_of_date
+             AND v.valuation_date >= CAST(d.as_of_date - INTERVAL 365 DAY AS DATE)
+             AND v.valuation_date < d.as_of_date
             GROUP BY d.league_code, d.as_of_date, lp.train_league_median_eur
         ),
         -- 6. Lagged valuation strictly < as_of_date (for secondary Value-Update model only)
@@ -529,6 +639,13 @@ def engineer_features_for_snapshots(
                 THEN 1
                 ELSE 0
             END AS joined_within_365d_flag,
+            CASE
+                WHEN ca.first_club_app_date IS NULL THEN 0.0
+                ELSE CAST(
+                    LEAST(date_diff('day', ca.first_club_app_date, s.as_of_date), {CLUB_TENURE_CAP_DAYS})
+                    AS DOUBLE
+                )
+            END AS club_tenure_days_capped,
             -- Completed prior-season features
             CAST(COALESCE(psa.prior_season_appearances, 0) AS DOUBLE) AS prior_season_appearances,
             CAST(COALESCE(psa.prior_season_minutes, 0) AS DOUBLE) AS prior_season_minutes,
@@ -547,41 +664,41 @@ def engineer_features_for_snapshots(
             ) AS prior_season_assists_per90_shrunk,
             -- Match-level rolling 12m/24m features + coverage indicator
             CASE
-                WHEN s.league_code = 'GB1' OR COALESCE(mr.raw_apps_24m, 0) > 0 THEN 1.0
+                WHEN ea.first_tracked_app_date IS NOT NULL THEN 1.0
                 ELSE 0.0
             END AS has_match_level_appearances,
             CASE
-                WHEN s.league_code = 'GB1' OR COALESCE(mr.raw_apps_24m, 0) > 0
+                WHEN ea.first_tracked_app_date IS NOT NULL
                 THEN CAST(COALESCE(mr.raw_mins_12m, 0) AS DOUBLE)
                 ELSE NULL
             END AS mins_last_12m,
             CASE
-                WHEN s.league_code = 'GB1' OR COALESCE(mr.raw_apps_24m, 0) > 0
+                WHEN ea.first_tracked_app_date IS NOT NULL
                 THEN CAST(COALESCE(mr.raw_mins_24m, 0) AS DOUBLE)
                 ELSE NULL
             END AS mins_last_24m,
             CASE
-                WHEN s.league_code = 'GB1' OR COALESCE(mr.raw_apps_24m, 0) > 0
+                WHEN ea.first_tracked_app_date IS NOT NULL
                 THEN CAST(COALESCE(mr.raw_apps_12m, 0) AS DOUBLE)
                 ELSE NULL
             END AS appearances_last_12m,
             CASE
-                WHEN s.league_code = 'GB1' OR COALESCE(mr.raw_apps_24m, 0) > 0
+                WHEN ea.first_tracked_app_date IS NOT NULL
                 THEN CAST(COALESCE(mr.raw_apps_24m, 0) AS DOUBLE)
                 ELSE NULL
             END AS appearances_last_24m,
             CASE
-                WHEN s.league_code = 'GB1' OR COALESCE(mr.raw_apps_24m, 0) > 0
+                WHEN ea.first_tracked_app_date IS NOT NULL
                 THEN CAST(COALESCE(mr.raw_goals_12m, 0) AS DOUBLE)
                 ELSE NULL
             END AS goals_last_12m,
             CASE
-                WHEN s.league_code = 'GB1' OR COALESCE(mr.raw_apps_24m, 0) > 0
+                WHEN ea.first_tracked_app_date IS NOT NULL
                 THEN CAST(COALESCE(mr.raw_assists_12m, 0) AS DOUBLE)
                 ELSE NULL
             END AS assists_last_12m,
             CASE
-                WHEN s.league_code = 'GB1' OR COALESCE(mr.raw_apps_24m, 0) > 0
+                WHEN ea.first_tracked_app_date IS NOT NULL
                 THEN ROUND(
                     (90.0 * COALESCE(mr.raw_goals_12m, 0) + {m0} * pp.match_goals_prior)
                     / (COALESCE(mr.raw_mins_12m, 0) + {m0}),
@@ -590,7 +707,7 @@ def engineer_features_for_snapshots(
                 ELSE NULL
             END AS goals_per90_shrunk_12m,
             CASE
-                WHEN s.league_code = 'GB1' OR COALESCE(mr.raw_apps_24m, 0) > 0
+                WHEN ea.first_tracked_app_date IS NOT NULL
                 THEN ROUND(
                     (90.0 * COALESCE(mr.raw_assists_12m, 0) + {m0} * pp.match_assists_prior)
                     / (COALESCE(mr.raw_mins_12m, 0) + {m0}),
@@ -599,22 +716,22 @@ def engineer_features_for_snapshots(
                 ELSE NULL
             END AS assists_per90_shrunk_12m,
             CASE
-                WHEN s.league_code = 'GB1' OR COALESCE(mr.raw_apps_24m, 0) > 0
+                WHEN ea.first_tracked_app_date IS NOT NULL
                 THEN ROUND(90.0 * COALESCE(mr.raw_cards_12m, 0) / (COALESCE(mr.raw_mins_12m, 0) + {m0}), 6)
                 ELSE NULL
             END AS cards_per90_12m,
             CASE
-                WHEN s.league_code = 'GB1' OR COALESCE(mr.raw_apps_24m, 0) > 0
+                WHEN ea.first_tracked_app_date IS NOT NULL
                 THEN ROUND(90.0 * COALESCE(mr.raw_cs_12m, 0) / (COALESCE(mr.raw_mins_12m, 0) + {m0}), 6)
                 ELSE NULL
             END AS clean_sheets_per90_12m,
             CASE
-                WHEN s.league_code = 'GB1' OR COALESCE(mr.raw_apps_24m, 0) > 0
+                WHEN ea.first_tracked_app_date IS NOT NULL
                 THEN ROUND(90.0 * COALESCE(mr.raw_gc_12m, 0) / (COALESCE(mr.raw_mins_12m, 0) + {m0}), 6)
                 ELSE NULL
             END AS goals_conceded_per90_12m,
             CASE
-                WHEN s.league_code = 'GB1' OR COALESCE(mr.raw_apps_24m, 0) > 0
+                WHEN ea.first_tracked_app_date IS NOT NULL
                 THEN CAST(
                     2 * COALESCE(mr.raw_mins_12m, 0) - COALESCE(mr.raw_mins_24m, 0)
                     AS DOUBLE
@@ -623,13 +740,27 @@ def engineer_features_for_snapshots(
             END AS minutes_trend_12m_vs_prev12m,
             0.0 AS has_advanced_stats,
             -- Clipped injury burden features
+            CASE WHEN ic.tm_player_id IS NOT NULL THEN 1.0 ELSE 0.0 END AS in_injury_source,
             CAST(COALESCE(ir.has_injury_history_flag, 0) AS DOUBLE) AS has_injury_history_flag,
-            COALESCE(ir.injury_days_12m, 0.0) AS injury_days_12m,
-            COALESCE(ir.injury_days_24m, 0.0) AS injury_days_24m,
-            CAST(COALESCE(ir.injury_count_12m, 0) AS DOUBLE) AS injury_count_12m,
-            CAST(COALESCE(ir.injury_count_24m, 0) AS DOUBLE) AS injury_count_24m,
-            CAST(COALESCE(ir.is_currently_injured_at_t, 0) AS DOUBLE) AS is_currently_injured_at_t,
+            CASE WHEN ic.tm_player_id IS NULL THEN NULL
+                 ELSE COALESCE(ir.injury_days_12m, 0.0) END AS injury_days_12m,
+            CASE WHEN ic.tm_player_id IS NULL THEN NULL
+                 ELSE COALESCE(ir.injury_days_24m, 0.0) END AS injury_days_24m,
+            CASE WHEN ic.tm_player_id IS NULL THEN NULL
+                 ELSE CAST(COALESCE(ir.injury_count_12m, 0) AS DOUBLE) END AS injury_count_12m,
+            CASE WHEN ic.tm_player_id IS NULL THEN NULL
+                 ELSE CAST(COALESCE(ir.injury_count_24m, 0) AS DOUBLE) END AS injury_count_24m,
+            CASE WHEN ic.tm_player_id IS NULL THEN NULL
+                 ELSE CAST(COALESCE(ir.is_currently_injured_at_t, 0) AS DOUBLE)
+            END AS is_currently_injured_at_t,
             ir.days_since_last_injury_end,
+            CASE
+                WHEN ic.tm_player_id IS NULL THEN NULL
+                ELSE LEAST(
+                    COALESCE(ir.days_since_last_injury_end, {INJURY_RECENCY_CAP_DAYS}.0),
+                    {INJURY_RECENCY_CAP_DAYS}.0
+                )
+            END AS days_since_last_injury_end_capped,
             -- Normalization & target columns
             ROUND(tm.trailing_league_median_eur, 2) AS trailing_league_median_eur,
             CASE
@@ -655,7 +786,17 @@ def engineer_features_for_snapshots(
                 ELSE NULL
             END AS days_since_prev_valuation,
             -- Recent-window contract ablation feature (excluded from MAIN_MODEL_FEATURES)
-            s.valid_contract_years_remaining
+            s.valid_contract_years_remaining,
+            -- Phase 2.1 modeling population
+            CASE
+                WHEN s.league_code NOT IN {supported_leagues_sql} THEN 'league_not_supported'
+                WHEN ea.first_tracked_app_date IS NULL
+                  OR COALESCE(mr.raw_mins_12m, 0) < {min_pop_minutes}
+                THEN 'insufficient_tracked_minutes'
+                WHEN la.last_app_club_id IS DISTINCT FROM s.tm_club_id AND sl.signed_flag IS NULL
+                THEN 'club_attribution_unverified'
+                ELSE NULL
+            END AS exclusion_reason
         FROM snap s
         JOIN src_players p ON s.tm_player_id = CAST(p.tm_player_id AS BIGINT)
         JOIN pos_priors pp ON p.position_group = pp.position_group
@@ -666,11 +807,17 @@ def engineer_features_for_snapshots(
         LEFT JOIN match_rolling mr ON s.snapshot_id = mr.snapshot_id
         LEFT JOIN injury_rolling ir ON s.snapshot_id = ir.snapshot_id
         LEFT JOIN lagged_val lv ON s.snapshot_id = lv.snapshot_id
+        LEFT JOIN ever_app ea ON s.snapshot_id = ea.snapshot_id
+        LEFT JOIN club_apps ca ON s.snapshot_id = ca.snapshot_id
+        LEFT JOIN last_app la ON s.snapshot_id = la.snapshot_id
+        LEFT JOIN signed_since_last_app sl ON s.snapshot_id = sl.snapshot_id
+        LEFT JOIN injury_cov ic ON s.tm_player_id = ic.tm_player_id
         ORDER BY s.snapshot_id
     """).df()
 
     result_df["as_of_date"] = pd.to_datetime(result_df["as_of_date"]).dt.date
     result_df["split"] = [assign_temporal_split(d) for d in result_df["as_of_date"]]
+    result_df["in_model_population"] = result_df["exclusion_reason"].isna()
     return result_df.drop(columns=["snapshot_id"])
 
 
