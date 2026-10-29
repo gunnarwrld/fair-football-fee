@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     redis_cache_ttl_seconds: int = 3600
     redis_lock_timeout_seconds: int = 5
+    # Redis is optional: short timeouts, and after an error the API skips it for this long
+    redis_socket_timeout_seconds: float = 0.25
+    redis_retry_after_seconds: float = 30.0
     metadata_refresh_seconds: int = 60
 
     # Both active model_version and data_version are resolved from the database
@@ -24,7 +27,9 @@ class Settings(BaseSettings):
     artifacts_dir: Path = Path("artifacts")
 
     api_v1_prefix: str = "/v1"
+    # Per client IP, applied to POST /v1/valuations only (the one path a client can make uncacheable)
     rate_limit_per_minute: int = 60
+    cors_origins: list[str] = ["http://localhost:3000"]
     log_level: str = "INFO"
 
     @property
