@@ -4,6 +4,10 @@ A full-stack machine learning system that estimates a football player's crowd-so
 
 > **Important Target Limitation**: The target variable (`market_value_eur`) is a **Transfermarkt crowd-sourced market valuation**, **not** an actual club-to-club negotiated transfer fee. Real transfer fees are heavily influenced by release clauses, buyer/seller financial leverage, amortization accounting, add-on clauses, and transfer-window urgency.
 
+## Scope
+
+The model covers **Premier League players with at least 450 tracked minutes in the prior 12 months**. That restriction removes a 2023 break in which players the open source contains, and keeps training, evaluation and serving on the same population. Liga Pro Ecuador was evaluated and dropped: the open data has almost no Ecuadorian match statistics, and its rows are a survivorship sample. See [`docs/phase2_1_population_findings.md`](docs/phase2_1_population_findings.md) for the evidence.
+
 ## Stack
 - **Data & ML**: Python 3.12, DuckDB, PyArrow (Parquet Lakehouse), Pandas, Scikit-Learn, XGBoost, LightGBM, Optuna, TreeSHAP, Split Conformal Prediction
 - **Backend & Caching**: FastAPI, SQLAlchemy 2.0 + Alembic, PostgreSQL 16 (6 operational serving tables), Redis 7 (cache-aside with stampede lock and graceful fallback)
