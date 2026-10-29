@@ -1,0 +1,51 @@
+{
+  "features": [
+    "position_group",
+    "preferred_foot",
+    "age_at_valuation",
+    "age_squared",
+    "height_cm",
+    "club_tenure_days_capped",
+    "prior_season_appearances",
+    "prior_season_minutes",
+    "prior_season_goals",
+    "prior_season_assists",
+    "prior_2seasons_minutes",
+    "prior_season_goals_per90_shrunk",
+    "prior_season_assists_per90_shrunk",
+    "mins_last_12m",
+    "mins_last_24m",
+    "appearances_last_12m",
+    "appearances_last_24m",
+    "goals_last_12m",
+    "assists_last_12m",
+    "goals_per90_shrunk_12m",
+    "assists_per90_shrunk_12m",
+    "cards_per90_12m",
+    "clean_sheets_per90_12m",
+    "goals_conceded_per90_12m",
+    "minutes_trend_12m_vs_prev12m",
+    "injury_days_12m",
+    "injury_days_24m",
+    "injury_count_12m",
+    "injury_count_24m",
+    "is_currently_injured_at_t",
+    "days_since_last_injury_end_capped"
+  ],
+  "categorical_levels": {
+    "position_group": [
+      "DEF",
+      "FWD",
+      "GK",
+      "MID"
+    ],
+    "preferred_foot": [
+      "both",
+      "left",
+      "right",
+      "unknown"
+    ]
+  },
+  "target": "target_log_ratio_vs_league_median",
+  "back_transform": "value_eur = expm1(prediction + ln(1 + trailing_league_median_eur))"
+}

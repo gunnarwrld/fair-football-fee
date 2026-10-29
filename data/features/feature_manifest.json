@@ -1,6 +1,6 @@
 {
   "data_version": "2026-06-12_24ade17697",
-  "generated_at": "2026-10-29T02:00:05.470528+00:00",
+  "generated_at": "2026-10-29T02:36:50.036424+00:00",
   "total_valuation_snapshots": 19938,
   "snapshot_counts_by_split": {
     "test": {
@@ -166,7 +166,7 @@
     "injury_count_24m",
     "is_currently_injured_at_t",
     "days_since_last_injury_end_capped",
-    "prev_log_market_value",
+    "prev_log_ratio_vs_league_median",
     "days_since_prev_valuation"
   ],
   "contract_ablation_features": [

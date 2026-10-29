@@ -1,0 +1,48 @@
+{
+  "model_version": "v1.0.0",
+  "model_type": "xgboost_regressor",
+  "trained_at": "2026-10-29T02:37:09.613451+00:00",
+  "data_version": "2026-06-12_24ade17697",
+  "git_commit": "81a8b4e46bfa1c37121b3b052711d19909bfba1d",
+  "git_dirty": true,
+  "seed": 42,
+  "params": {
+    "learning_rate": 0.029446016182389134,
+    "max_depth": 5,
+    "min_child_weight": 1.4006937874302197,
+    "subsample": 0.5137577854133433,
+    "colsample_bytree": 0.921261789418065,
+    "reg_lambda": 0.008580213425998233,
+    "reg_alpha": 0.14893893864419808,
+    "gamma": 0.12051407191761625,
+    "n_estimators": 781
+  },
+  "training_rows": {
+    "train+val_tune": {
+      "n": 9519,
+      "from": "2013-07-02",
+      "to": "2024-05-27"
+    }
+  },
+  "evaluation_rows": {
+    "val_calib": {
+      "n": 1101,
+      "from": "2024-07-18",
+      "to": "2025-06-17"
+    },
+    "test": {
+      "n": 1288,
+      "from": "2025-10-17",
+      "to": "2026-06-03"
+    }
+  },
+  "libraries": {
+    "python": "3.12.15",
+    "xgboost": "3.4.1",
+    "lightgbm": "4.7.0",
+    "scikit-learn": "1.9.1",
+    "optuna": "5.0.0",
+    "numpy": "2.5.4",
+    "pandas": "3.1.0"
+  }
+}

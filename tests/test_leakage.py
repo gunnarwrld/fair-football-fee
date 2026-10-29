@@ -42,6 +42,7 @@ def test_main_model_feature_registry_excludes_forbidden_columns() -> None:
     forbidden = {
         "prev_market_value_eur",
         "prev_log_market_value",
+        "prev_log_ratio_vs_league_median",
         "days_since_prev_valuation",
         "valid_contract_years_remaining",
         "contract_expires_at",
@@ -55,7 +56,7 @@ def test_main_model_feature_registry_excludes_forbidden_columns() -> None:
     }
     overlap = set(MAIN_MODEL_FEATURES) & forbidden
     assert not overlap, f"Forbidden leakage columns found in MAIN_MODEL_FEATURES: {overlap}"
-    assert "prev_log_market_value" in VALUE_UPDATE_MODEL_FEATURES
+    assert "prev_log_ratio_vs_league_median" in VALUE_UPDATE_MODEL_FEATURES
     assert "valid_contract_years_remaining" in CONTRACT_ABLATION_FEATURES
 
 

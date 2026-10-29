@@ -123,8 +123,11 @@ MAIN_MODEL_NUMERIC_FEATURES: list[str] = [
 
 MAIN_MODEL_FEATURES: list[str] = MAIN_MODEL_CATEGORICAL_FEATURES + MAIN_MODEL_NUMERIC_FEATURES
 
+# The lagged value is expressed relative to the league index (same scale as the target).
+# An absolute log value fails out of time: trees cannot extrapolate, so in an inflated season
+# ordinary players' previous values look like past stars' (Phase 3 finding).
 VALUE_UPDATE_MODEL_FEATURES: list[str] = MAIN_MODEL_FEATURES + [
-    "prev_log_market_value",
+    "prev_log_ratio_vs_league_median",
     "days_since_prev_valuation",
 ]
 
@@ -781,6 +784,11 @@ def engineer_features_for_snapshots(
                 ELSE NULL
             END AS prev_log_market_value,
             CASE
+                WHEN lv.prev_market_value_eur IS NOT NULL AND lv.prev_market_value_eur > 0
+                THEN LN((lv.prev_market_value_eur + 1.0) / (tm.trailing_league_median_eur + 1.0))
+                ELSE NULL
+            END AS prev_log_ratio_vs_league_median,
+            CASE
                 WHEN lv.prev_valuation_date IS NOT NULL
                 THEN CAST(date_diff('day', lv.prev_valuation_date, s.as_of_date) AS DOUBLE)
                 ELSE NULL
@@ -837,6 +845,7 @@ def build_serving_feature_dict(row: pd.Series | dict[str, Any]) -> dict[str, Any
             "club_name",
             "prev_market_value_eur",
             "prev_log_market_value",
+            "prev_log_ratio_vs_league_median",
             "days_since_prev_valuation",
             "valid_contract_years_remaining",
         ]
