@@ -1,0 +1,14 @@
+## Interpretation
+
+_Hand-written; refers to the tables above instead of repeating numbers, so it stays true when the report is regenerated._
+
+**What the main model is.** It estimates what a player's recent playing record, output, age and fitness imply about their market value relative to the league. It deliberately doesn't know the player's previous valuation. That is why "carry the last value forward" beats it: Transfermarkt values are sticky and move in small steps. The value-update model, which does see the previous value, beats carry-forward, so the stickiness is captured where it belongs. The two models answer different questions: "what is this player's profile worth" vs "where will the next valuation land".
+
+**Largest error patterns, and what to do about each**
+1. **Low-value players (< €5M).** Large errors with strong over-prediction. Partly mechanical: slicing by *actual* value puts players who were marked down into this bucket, so the bias is partly regression to the mean. Partly real: squad players on the way out lose value in ways minutes don't capture. *Next:* contract-expiry information would help most here, but the open data can't provide it point-in-time (see the contract ablation). Phase 4 intervals should be wider here.
+2. **Players aged 29+.** Over-predicted more with each age band. Transfermarkt depreciates older players faster than their recent output declines, and the model reads a 31-year-old's full season of minutes too generously. *Next:* test an age × minutes interaction or a monotone-decreasing constraint on age beyond the peak, decided by train-only CV.
+3. **Valuation-batch shocks.** The bias-by-batch table shows that each Transfermarkt update round carries its own league-wide shift, from slightly positive to strongly negative. The latest test batches are the most over-predicted. This is not a clean seasonal pattern: some December batches are as negative as some May batches. A trailing-median index lags these corrections. A season-phase feature and an index-growth feature were both tested and **rejected by train-only CV**. The test split looked better with the season-phase feature, but adopting it on that basis would be test-set snooping. *Next (Phase 4):* evaluate recentering predictions by the median residual of the most recent completed batch (point-in-time valid at serving time), and check conformal coverage per batch rather than only overall.
+
+**Contract length.** Players whose contract can be dated point-in-time are too few, and the with/without difference is inside its confidence interval. The UI shows contract length read-only, not as a what-if slider.
+
+**Model choice.** XGBoost and Ridge are statistically tied. XGBoost ships for missing-value handling, interactions and exact TreeSHAP. Ridge stays as the interpretable reference.
