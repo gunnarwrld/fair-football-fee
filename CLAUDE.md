@@ -33,7 +33,7 @@ A portfolio regression system that estimates a Premier League player's **Transfe
 - Tests marked `@pytest.mark.data` need the local lakehouse and skip on a clean clone.
 
 ## Environment notes
-- Owner's machine: macOS, Python 3.12 `.venv`, Docker Desktop (must be running for `make db`).
+- Owner's machine: macOS (Apple Silicon, Homebrew), Python 3.12 `.venv`, Docker Desktop (must be running for `make db`). XGBoost and LightGBM need `brew install libomp`; `make doctor` checks both.
 - Remote Claude sessions run in a Linux VM that mounts the repo. The macOS `.venv` does not run there, so use a separate env outside the repo (`uv venv -p 3.12 ~/fffenv`, then `uv pip install` the deps). Ruff is pinned to the 0.17.x behaviour the owner uses (`ruff check src tests migrations`).
 - In that VM, deleting files and git lock cleanup need the user's delete permission. Pushing needs the owner's credentials: commit locally, then the owner pushes.
 

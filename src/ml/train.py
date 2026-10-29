@@ -13,6 +13,7 @@ Protocol
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import json
 import platform
 import subprocess
@@ -21,12 +22,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import lightgbm
 import numpy as np
 import optuna
 import pandas as pd
 import sklearn
-import xgboost
 
 from src.config import settings
 from src.features.engineer import (
@@ -273,7 +272,9 @@ def run(
         "training_rows": {"train+val_tune": _range(train_full)},
         "evaluation_rows": {"val_calib": _range(val_calib), "test": _range(test)},
         "libraries": {
-            "python": platform.python_version(), "xgboost": xgboost.__version__, "lightgbm": lightgbm.__version__,
+            "python": platform.python_version(),
+            "xgboost": importlib.metadata.version("xgboost"),
+            "lightgbm": importlib.metadata.version("lightgbm"),
             "scikit-learn": sklearn.__version__, "optuna": optuna.__version__, "numpy": np.__version__, "pandas": pd.__version__,
         },
     }

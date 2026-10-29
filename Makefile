@@ -1,9 +1,15 @@
 # fair-football-fee — common commands (macOS/Linux). Uses the project virtualenv.
 PY ?= .venv/bin/python
 
-.PHONY: help db-up db-down migrate load-db db ingest clean-data features pipeline test test-unit lint train train-retune report
+.PHONY: doctor help db-up db-down migrate load-db db ingest clean-data features pipeline test test-unit lint train train-retune report
+
+doctor:
+	@$(PY) -c "import xgboost, lightgbm; print('xgboost', xgboost.__version__, '| lightgbm', lightgbm.__version__, '| native libs OK')" \
+		|| echo "Native ML libraries failed to load. On macOS run: brew install libomp"
+	@docker info >/dev/null 2>&1 && echo "docker OK" || echo "Docker isn't running: open -a Docker"
 
 help:
+	@echo "doctor       check native ML libraries (libomp) and Docker"
 	@echo "db           start postgres+redis, migrate, load clean tables and serving features"
 	@echo "pipeline     ingest -> clean -> features (Parquet only, no database)"
 	@echo "train        Phase 3: baselines + XGBoost + report (reuses committed tuning.json)"
@@ -11,6 +17,7 @@ help:
 	@echo "test / lint  full pytest suite / ruff"
 
 db-up:
+	@docker info >/dev/null 2>&1 || { echo "Docker isn't running. Start Docker Desktop (open -a Docker), wait for it, then retry."; exit 1; }
 	docker compose up -d --wait postgres redis
 
 db-down:

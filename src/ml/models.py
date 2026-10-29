@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import importlib
+from types import ModuleType
 from typing import Any
 
-import lightgbm as lgb
 import numpy as np
 import pandas as pd
-import xgboost as xgb
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import RidgeCV
@@ -17,6 +17,20 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from src.ml.metrics import AGE_BANDS, band
 
 SEED = 42
+
+
+def _load_native(module: str) -> ModuleType:
+    """Import XGBoost/LightGBM lazily, so baselines and tests don't need their native libraries.
+
+    Both ship macOS wheels linked against the OpenMP runtime, which macOS doesn't include.
+    """
+    try:
+        return importlib.import_module(module)
+    except OSError as exc:  # dlopen failure, e.g. "Library not loaded: @rpath/libomp.dylib"
+        raise RuntimeError(
+            f"{module} is installed but its native library failed to load ({exc}). "
+            "On macOS install the OpenMP runtime: `brew install libomp`."
+        ) from exc
 
 # Untuned reference configuration (fixed tree count: val_tune is never used for early stopping)
 XGB_DEFAULT_PARAMS: dict[str, Any] = {
@@ -64,14 +78,16 @@ def make_ridge(numeric: list[str], categorical: list[str]) -> Pipeline:
     return Pipeline([("pre", pre), ("ridge", RidgeCV(alphas=np.logspace(-3, 3, 25)))])
 
 
-def make_lightgbm() -> lgb.LGBMRegressor:
+def make_lightgbm() -> Any:
+    lgb = _load_native("lightgbm")
     return lgb.LGBMRegressor(
         n_estimators=500, learning_rate=0.05, num_leaves=31, subsample=0.8, subsample_freq=1,
         colsample_bytree=0.8, random_state=SEED, n_jobs=4, verbose=-1,
     )
 
 
-def make_xgb(params: dict[str, Any], **overrides: Any) -> xgb.XGBRegressor:
+def make_xgb(params: dict[str, Any], **overrides: Any) -> Any:
+    xgb = _load_native("xgboost")
     cfg = {
         "tree_method": "hist",
         "enable_categorical": True,
