@@ -1,0 +1,108 @@
+# Everything that can be checked without the data lakehouse or a loaded database. Tests marked `data` or
+# `db` need those and run locally (`make test`); here a fresh Postgres checks the migrations instead.
+# Third-party actions are pinned to commit SHAs (tags can be moved), with the version in a comment.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PY: python  # the Makefile defaults to .venv/bin/python
+
+jobs:
+  python:
+    name: Python lint, migrations and unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fff_user
+          POSTGRES_PASSWORD: fff_pass
+          POSTGRES_DB: fair_football_fee
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U fff_user -d fair_football_fee"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://fff_user:fff_pass@localhost:5432/fair_football_fee
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            constraints.txt
+      - run: pip install -c constraints.txt -e ".[ml,dev]"
+      - run: make lint
+      - name: Migrations build an empty database and match the SQLAlchemy models
+        run: make migrate schema-check
+      - run: make test-unit
+
+  api-contract:
+    name: API contract matches the UI's types
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            constraints.txt
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: pip install -c constraints.txt .  # the serving dependencies are enough to build the schema
+      - run: npm --prefix frontend ci
+      - run: make api-types
+      - name: The committed openapi.json and api-types.ts are what the code generates
+        run: git diff --exit-code -- frontend/openapi.json frontend/src/lib/api-types.ts
+
+  web:
+    name: Frontend type-check, lint, tests and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm --prefix frontend ci
+      - run: make web-check
+
+  docker:
+    name: Docker images build and the API image starts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: docker compose --profile app build
+      - name: The API image can load an XGBoost model (native OpenMP library, scikit-learn wrapper)
+        run: docker run --rm --entrypoint python fff-api -c "import xgboost; xgboost.XGBRegressor(); import src.api.main"
+      - name: The API container starts and reports the missing database instead of crashing
+        run: |
+          docker run -d --name api -p 8000:8000 fff-api
+          for _ in $(seq 1 30); do curl -s localhost:8000/v1/health > health.json && break; sleep 1; done
+          cat health.json
+          grep -q '"database":false' health.json
+      - if: failure()
+        run: docker logs api || true

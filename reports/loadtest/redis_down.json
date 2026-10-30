@@ -1,0 +1,102 @@
+{
+  "meta": {
+    "run": "redis_down",
+    "expect": "shed",
+    "redis": "down",
+    "duration": "60s",
+    "rates_per_second": {
+      "valuation": 200,
+      "search": 40,
+      "whatif": 20
+    },
+    "p95_budget_ms": null,
+    "shed_p99_ms": 3000,
+    "players": 276,
+    "api_config": {
+      "workers": 2,
+      "max_concurrent_requests": 16,
+      "db_connections": 15,
+      "db_pool_timeout_s": 2
+    },
+    "docker_cpus": "10",
+    "docker_memory_bytes": "8217059328",
+    "git": "99eacbe-dirty",
+    "k6_image": "grafana/k6:2.2.0",
+    "finished_at": "2026-10-30T09:02:56.315Z"
+  },
+  "requests": {
+    "valuation": {
+      "served_ms": {
+        "p(95)": 584.6078752999999,
+        "p(99)": 715.5190573399999,
+        "max": 1207.002459,
+        "count": 3503,
+        "med": 411.583708
+      },
+      "any_ms": {
+        "max": 1207.002459,
+        "count": 12001,
+        "med": 23.360584,
+        "p(95)": 490.44775,
+        "p(99)": 614.715167
+      },
+      "ok_rate": 0.29189234230480793,
+      "shed_rate": 0.708107657695192,
+      "error_rate": 0,
+      "cache_hit_rate": 0,
+      "thresholds": {
+        "valuation_error rate==0": true,
+        "valuation_any_ms p(99)<3000": true
+      }
+    },
+    "search": {
+      "served_ms": {
+        "count": 759,
+        "med": 98.115542,
+        "p(95)": 201.70007499999997,
+        "p(99)": 307.67134058,
+        "max": 688.506667
+      },
+      "any_ms": {
+        "p(99)": 273.499083,
+        "max": 688.506667,
+        "count": 2401,
+        "med": 25.452583,
+        "p(95)": 157.214417
+      },
+      "ok_rate": 0.3161182840483132,
+      "shed_rate": 0.6838817159516868,
+      "error_rate": 0,
+      "cache_hit_rate": 0,
+      "thresholds": {
+        "search_error rate==0": true,
+        "search_any_ms p(99)<3000": true
+      }
+    },
+    "whatif": {
+      "served_ms": {
+        "count": 428,
+        "med": 715.001521,
+        "p(95)": 932.4161214999999,
+        "p(99)": 1103.0068523399998,
+        "max": 1386.549792
+      },
+      "any_ms": {
+        "count": 1201,
+        "med": 29.583709,
+        "p(95)": 844.234667,
+        "p(99)": 986.917375,
+        "max": 1386.549792
+      },
+      "ok_rate": 0.3563696919233972,
+      "shed_rate": 0.6436303080766028,
+      "error_rate": 0,
+      "cache_hit_rate": 0,
+      "thresholds": {
+        "whatif_error rate==0": true,
+        "whatif_any_ms p(99)<3000": true
+      }
+    }
+  },
+  "dropped_iterations": 0
+}

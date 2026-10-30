@@ -1,0 +1,9 @@
+# Build context of Dockerfile.api. An allowlist: data/, .venv/, .env and the model binaries never
+# reach the Docker daemon (artifacts/ is mounted read-only at run time instead).
+*
+!pyproject.toml
+!constraints.txt
+!alembic.ini
+!migrations/
+!src/
+**/__pycache__

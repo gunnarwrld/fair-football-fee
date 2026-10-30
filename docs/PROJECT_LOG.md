@@ -90,6 +90,66 @@ Results: `reports/phase4_explain_intervals.md` and `reports/model_card_v1.0.0.md
 - **Tests:** 13 frontend unit tests (formatters, axis ticks, and the identity the UI relies on: baseline × every driver's factor = estimate), plus API tests for the new fields.
 - **Deferred to Phase 7:** the frontend Dockerfile and the compose `app` profile (`NEXT_PUBLIC_API_BASE_URL` is baked in at build time, so it becomes a build argument), and CI running `make web-check`.
 
+## Phase 7: Docker, CI, load test (2026-10-29)
+- **API image (`Dockerfile.api`):**
+  - Python 3.12 slim (Debian trixie) plus `libgomp1`, the OpenMP runtime XGBoost needs. It installs only `[project.dependencies]`, at the exact versions in `constraints.txt`, and runs as a non-root user with a health check on `/v1/health`.
+  - The model is not in the image. `artifacts/` is mounted read-only and the active version still comes from `model_versions`, so a new model needs `make register`, not a rebuild.
+  - `.dockerignore` is an allowlist: `data/`, `.venv` and `.env` never reach the build context.
+- **Image size: 601 MB → 260 MB compressed.**
+  - Training libraries moved to an `ml` extra.
+  - On Linux the project installs `xgboost-cpu`, the same 3.4.1 release without the 347 MB NVIDIA NCCL library the default wheel pulls in.
+  - Running the container showed that `XGBRegressor` refuses to start without scikit-learn, so scikit-learn stays a serving dependency. Two guards now catch this kind of mistake: a test values a player in a fresh interpreter and fails if serving imports anything from the `ml` or `dev` extras, and CI builds `XGBRegressor` inside the image.
+- **Parity:** the Linux container and the macOS API returned the same numbers for all 439 serving players. The largest relative difference over every number in every response was 1.2e-7, in one SHAP effect (float32 rounding).
+- **Pinned versions:** `constraints.txt` is a `pip freeze` of the owner's `.venv`, the versions recorded in the model card; `make constraints` regenerates it. Ruff is pinned to 0.17.2, because new ruff releases add rules. `rapidfuzz` was removed (never imported). `train.py` now records the XGBoost version under either package name.
+- **UI image (`frontend/Dockerfile`):** Next.js standalone output, run as the non-root `node` user. `NEXT_PUBLIC_API_BASE_URL` is a build argument, because Next inlines it into the browser bundle.
+- **Compose:**
+  - Profiles `app` (api, frontend) and `loadtest` (k6), with a fixed project name.
+  - The API waits for a healthy Postgres, but Redis is `required: false`: invariant 12 at the orchestration level.
+- **Trusted proxy, with no new code:**
+  - Uvicorn already rewrites the client address from `X-Forwarded-For`, but only for connections from `FORWARDED_ALLOW_IPS` (default 127.0.0.1), and it takes the right-most untrusted entry.
+  - The old comment in `deps.py` said the header was always ignored. That was wrong for local connections, so it was corrected.
+  - Tests pin the rule:
+    - a direct client forging the header is still counted by its own address;
+    - behind a trusted proxy, each forwarded client has its own budget;
+    - entries a client prepends are ignored.
+- **API contract file:**
+  - `scripts/export_openapi.py` writes `frontend/openapi.json` from the code, without a database. The TypeScript generated from it was byte-identical to the earlier version generated from the live API.
+  - pytest compares the file with the app, and CI regenerates both files and fails on any diff.
+- **CI (`.github/workflows/ci.yml`), four jobs, actions pinned by commit SHA:**
+  - Python: lint, migrations on an empty Postgres plus `alembic check`, unit tests.
+  - API contract.
+  - Frontend: `make web-check`.
+  - Docker: both images build, and the API image starts without a database and reports it instead of crashing.
+- **Load test (k6, open model, fixed arrival rates):**
+  - **Setup:** cached valuations, uncached search and always-uncached what-ifs at the same time; 200 + 40 + 20 requests/s for 60 s per run.
+  - **First finding, with Redis stopped:**
+    - Every valuation becomes a model + SHAP run, and the API collapsed: in a 15 s probe only 112 requests completed, with p95 near 30 s and 500 errors.
+    - Cause: each request held its database connection while the model ran and waited for the GIL. The 15 connections per worker ran out, and SQLAlchemy lets a request wait 30 s for one before failing.
+  - **Three fixes:**
+    1. Use cases finish their reads and call `Repository.release()` before the model runs. A test pins the order.
+    2. Each worker takes at most `MAX_CONCURRENT_REQUESTS` requests at once; the excess gets an immediate 503 `busy` with `Retry-After`.
+    3. The pool wait is 2 s and maps to the same 503.
+  - **Effect of the fixes:** in 20 s probes at the same load, shedding alone answered everything (no 500s) but served about 22 requests/s. Adding the connection release raised that to about 103/s.
+  - **Why not uvicorn's `--limit-concurrency`:** it counts open connections too, and browsers keep keep-alive connections to this API, so idle users would trigger 503s.
+- **Choosing `MAX_CONCURRENT_REQUESTS` = 16 per worker:**
+  - Measured with Redis stopped at the full load, 30 s per value (k6 output). Served requests/s were about 103, 110 and 113 at caps of 8, 16 and 32. Served-valuation p95 was 203 ms, 386 ms and 779 ms.
+  - Throughput is set by the CPU, so a higher cap only adds waiting time (Little's law). 16 halves the overload latency of 32 for about 2% less throughput, and it keeps twice the burst headroom of 8 for normal traffic.
+- **Final numbers** ([report](../reports/phase7_load_test.md); the last of four full runs, all on the owner's laptop):
+  - The last run, with the final code and thresholds, passed every check.
+    - **Redis up:** valuation p95 48.0 ms, 0.7–0.8% shed, no errors.
+    - **Redis down at the same load:** 78 of 260 requests/s served, 0 errors, p99 of every response ≤ 987 ms.
+    - **Redis down at a quarter of the load:** everything served.
+  - **Run-to-run variation is large, because the laptop is shared.** During the last run another program (a native `mysqld`) kept the load average near 7. Across the four runs:
+    - cached-valuation p95 ranged 7.3–54.7 ms;
+    - Redis-up shedding ranged 0–3.4%;
+    - with Redis down, served requests/s ranged 78–108.
+
+    Once the fixes were in, every run had 0 errors. One of the three runs at a cap of 16 shed 3.4% during a stall, more than the 1% the normal-load check now allows. Compare runs on an idle machine.
+  - **Decision (owner, 2026-10-30):** keep 16 and accept rare shedding during short stalls. The normal-load check now asks for no errors and at most 1% shed, instead of 99.9% served.
+- **README:** screenshots of the UI, served by the containers and captured with headless Chrome; an architecture diagram; a CI table. Headline numbers are copied from the model card and the load test report.
+  - The what-if screenshot uses a squad player (Joe Gomez, about 1,000 more minutes: +31.5%).
+  - For Haaland, already at 4,311 minutes, +400 minutes gives −3.0%. Near the top of the training range the trees have little data, so the model's response is flat or noisy there. It's a genuine model output, not a bug, but a confusing first example.
+
 ## Ops
 - Host Postgres port changed to 5433 (2026-10-29). The owner's Mac already runs a native Postgres on 5432 without the `fff_user` role, so `--load-db` connected to the wrong server.
 - From 2026-10-29 Claude develops the project directly (owner's instruction), keeping `CLAUDE.md`, this log and the claude.ai Project doc current so no context is lost.

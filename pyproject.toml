@@ -9,17 +9,19 @@ description = "Football Player Crowd-Sourced Market Value Predictor (XGBoost, Tr
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+# What the API imports (the API image installs only these). DuckDB and PyArrow are here because
+# serving reuses the training feature code (`src/features/engineer.py`), which imports them.
 dependencies = [
     "pandas>=2.2.0,<4.0.0",
     "pyarrow>=15.0.0,<28.0.0",
     "duckdb>=1.0.0,<3.0.0",
     "numpy>=1.26.0,<3.0.0",
+    # Linux gets the CPU-only build of the same release: the default Linux wheel adds ~350 MB of
+    # NVIDIA GPU libraries this project never loads (training and serving both run on CPU)
+    "xgboost>=2.0.3,<4.0.0; sys_platform != 'linux'",
+    "xgboost-cpu>=2.1.0,<4.0.0; sys_platform == 'linux'",
+    # XGBRegressor, the wrapper the model is saved and loaded with, refuses to start without it
     "scikit-learn>=1.4.0,<2.0.0",
-    "xgboost>=2.0.3,<4.0.0",
-    "lightgbm>=4.3.0,<5.0.0",
-    "optuna>=3.6.0,<6.0.0",
-    "shap>=0.45.0,<1.0.0",
-    "matplotlib>=3.8.0,<4.0.0",
     "sqlalchemy>=2.0.29,<3.0.0",
     "alembic>=1.13.1,<2.0.0",
     "psycopg[binary]>=3.1.18,<4.0.0",
@@ -28,16 +30,24 @@ dependencies = [
     "redis>=5.0.4,<9.0.0",
     "pydantic>=2.7.0,<3.0.0",
     "pydantic-settings>=2.2.1,<3.0.0",
-    "rapidfuzz>=3.8.1,<4.0.0",
-    "httpx>=0.27.0,<1.0.0",
 ]
 
 [project.optional-dependencies]
+# Data pipeline, training, calibration and reports
+ml = [
+    "lightgbm>=4.3.0,<5.0.0",
+    "optuna>=3.6.0,<6.0.0",
+    "shap>=0.45.0,<1.0.0",
+    "matplotlib>=3.8.0,<4.0.0",
+    "httpx>=0.27.0,<1.0.0",
+]
 dev = [
     "pytest>=8.1.1,<10.0.0",
     "pytest-asyncio>=0.23.6,<2.0.0",
     "fakeredis>=2.23.0,<3.0.0",
-    "ruff>=0.4.2,<1.0.0",
+    "httpx>=0.27.0,<1.0.0",
+    # Exact: each ruff release can add lint rules, and CI must flag what the owner's editor flags
+    "ruff==0.17.2",
 ]
 
 [tool.setuptools.packages.find]

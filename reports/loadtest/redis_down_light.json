@@ -1,0 +1,99 @@
+{
+  "meta": {
+    "run": "redis_down_light",
+    "expect": "served",
+    "redis": "down",
+    "duration": "60s",
+    "rates_per_second": {
+      "valuation": 50,
+      "search": 10,
+      "whatif": 5
+    },
+    "p95_budget_ms": null,
+    "shed_p99_ms": null,
+    "players": 276,
+    "api_config": {
+      "workers": 2,
+      "max_concurrent_requests": 16,
+      "db_connections": 15,
+      "db_pool_timeout_s": 2
+    },
+    "docker_cpus": "10",
+    "docker_memory_bytes": "8217059328",
+    "git": "99eacbe-dirty",
+    "k6_image": "grafana/k6:2.2.0",
+    "finished_at": "2026-10-30T09:04:03.060Z"
+  },
+  "requests": {
+    "valuation": {
+      "served_ms": {
+        "max": 552.766834,
+        "count": 3001,
+        "med": 17.752208,
+        "p(95)": 49.04025,
+        "p(99)": 181.68175
+      },
+      "any_ms": {
+        "count": 3001,
+        "med": 17.752208,
+        "p(95)": 49.04025,
+        "p(99)": 181.68175,
+        "max": 552.766834
+      },
+      "ok_rate": 1,
+      "shed_rate": 0,
+      "error_rate": 0,
+      "cache_hit_rate": 0,
+      "thresholds": {
+        "valuation_ok rate>0.999": true
+      }
+    },
+    "search": {
+      "served_ms": {
+        "p(99)": 63.52175,
+        "max": 325.191208,
+        "count": 601,
+        "med": 11.156667,
+        "p(95)": 21.618125
+      },
+      "any_ms": {
+        "p(95)": 21.618125,
+        "p(99)": 63.52175,
+        "max": 325.191208,
+        "count": 601,
+        "med": 11.156667
+      },
+      "ok_rate": 1,
+      "shed_rate": 0,
+      "error_rate": 0,
+      "cache_hit_rate": 0,
+      "thresholds": {
+        "search_ok rate>0.999": true
+      }
+    },
+    "whatif": {
+      "served_ms": {
+        "count": 301,
+        "med": 44.128458,
+        "p(95)": 89.120916,
+        "p(99)": 359.139777,
+        "max": 615.934584
+      },
+      "any_ms": {
+        "p(99)": 359.139777,
+        "max": 615.934584,
+        "count": 301,
+        "med": 44.128458,
+        "p(95)": 89.120916
+      },
+      "ok_rate": 1,
+      "shed_rate": 0,
+      "error_rate": 0,
+      "cache_hit_rate": 0,
+      "thresholds": {
+        "whatif_ok rate>0.999": true
+      }
+    }
+  },
+  "dropped_iterations": 0
+}

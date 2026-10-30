@@ -1,7 +1,7 @@
 # fair-football-fee — common commands (macOS/Linux). Uses the project virtualenv.
 PY ?= .venv/bin/python
 
-.PHONY: api web web-check doctor help db-up db-down migrate load-db db ingest clean-data features pipeline test test-unit lint train train-retune report calibrate register
+.PHONY: api web web-check api-types up down loadtest constraints schema-check doctor help db-up db-down migrate load-db db ingest clean-data features pipeline test test-unit lint train train-retune report calibrate register
 
 doctor:
 	@$(PY) -c "import xgboost, lightgbm; print('xgboost', xgboost.__version__, '| lightgbm', lightgbm.__version__, '| native libs OK')" \
@@ -19,6 +19,11 @@ help:
 	@echo "api          run the FastAPI service on http://localhost:8000 (docs at /docs; needs make db)"
 	@echo "web          run the Next.js UI on http://localhost:3000 (needs make api)"
 	@echo "web-check    frontend type-check, lint, unit tests and production build"
+	@echo "api-types    regenerate frontend/openapi.json and the UI's TypeScript types from the API code"
+	@echo "up / down    API + UI as containers on :8000 / :3000 (needs make db and make register first)"
+	@echo "loadtest     k6 against the API container, with and without Redis -> reports/phase7_load_test.md"
+	@echo "constraints  re-pin constraints.txt to the versions installed in .venv"
+	@echo "schema-check alembic check: the models and the migrations describe the same schema"
 	@echo "test / lint  full pytest suite / ruff"
 
 db-up:
@@ -71,6 +76,27 @@ api:
 web:
 	npm --prefix frontend run dev
 
+# The OpenAPI schema is built from the code (no database needed); the TypeScript types from the schema
+api-types:
+	$(PY) scripts/export_openapi.py
+	npm --prefix frontend run api:types
+
+up:
+	docker compose --profile app up -d --build --wait
+
+# Only the app containers: Postgres and Redis keep running for make api (db-down stops everything)
+down:
+	docker compose --profile app rm --stop --force api frontend
+
+loadtest:
+	bash scripts/loadtest.sh
+
+constraints:
+	$(PY) scripts/freeze_constraints.py
+
+schema-check:
+	$(PY) -m alembic check
+
 web-check:
 	npm --prefix frontend run typecheck
 	npm --prefix frontend run lint
@@ -84,4 +110,4 @@ test-unit:
 	$(PY) -m pytest -q -m "not data and not db"
 
 lint:
-	$(PY) -m ruff check src tests migrations
+	$(PY) -m ruff check src tests migrations scripts
