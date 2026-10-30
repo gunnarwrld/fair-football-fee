@@ -18,3 +18,26 @@ The model covers **Premier League players with at least 450 tracked minutes in t
 - [Phase 4 explanations and intervals](reports/phase4_explain_intervals.md): TreeSHAP drivers, update-round recentering, conformal prediction intervals and their coverage.
 - [Model card for v1.0.0](reports/model_card_v1.0.0.md): intended use, data, performance, limitations.
 - Decision history and the reasons behind each choice: [`docs/PROJECT_LOG.md`](docs/PROJECT_LOG.md).
+
+## Run it locally
+
+Needs Python 3.12, Docker Desktop and, on macOS, `brew install libomp` (`make doctor` checks all three).
+
+```bash
+make pipeline    # download pinned sources → clean → point-in-time features
+make train       # Phase 3 model (reuses the committed tuning)
+make calibrate   # Phase 4 intervals, recentering, report + model card
+make db          # Postgres + Redis in Docker, migrations, serving tables
+make register    # mark the model active in model_versions
+make api         # http://localhost:8000/docs
+```
+
+| Endpoint | What it returns |
+|---|---|
+| `GET /v1/players?q=haaland` | Players matching a name, with `has_valuation` |
+| `GET /v1/players/{id}/valuation` | Estimate, 80% and 90% intervals, Transfermarkt value, top SHAP drivers |
+| `POST /v1/valuations` | The same for a what-if scenario, plus the change vs today |
+| `GET /v1/model` | Active model, interval method, test metrics |
+| `GET /v1/health` | Database, Redis and model status |
+
+Valuations are cached in Redis (`X-Cache: HIT/MISS/BYPASS`); if Redis is down the API keeps answering, uncached.
