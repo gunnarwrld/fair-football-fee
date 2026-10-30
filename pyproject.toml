@@ -50,6 +50,7 @@ pythonpath = ["."]
 addopts = "-v --tb=short"
 markers = [
     "data: tests that validate local gitignored Parquet lakehouse artifacts (skipped on clean clone)",
+    "db: tests that need the local Postgres from `make db` (skipped when it is unreachable)",
 ]
 
 [tool.ruff]

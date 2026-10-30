@@ -1,0 +1,56 @@
+{
+  "model_version": "v1.0.0",
+  "data_version": "2026-06-12_24ade17697",
+  "created_at": "2026-10-29T04:49:28.351428+00:00",
+  "config": "mondrian + recentering",
+  "score": "abs_log_residual",
+  "display_level": 0.8,
+  "levels": [
+    0.8,
+    0.9
+  ],
+  "bins": {
+    "variable": "predicted_log_ratio",
+    "edges": [
+      -0.5340547561645508,
+      0.12439245730638504,
+      0.6101513504981995
+    ]
+  },
+  "quantiles": {
+    "0.8": [
+      0.696190103720854,
+      0.5074652887171522,
+      0.47765811618326226,
+      0.4684944290253513
+    ],
+    "0.9": [
+      0.9357487048338913,
+      0.6267259200254985,
+      0.6582252025062171,
+      0.663656873570351
+    ]
+  },
+  "n_calib": [
+    275,
+    275,
+    275,
+    276
+  ],
+  "calibration_split": "val_calib",
+  "recentering": {
+    "enabled": true,
+    "batch_gap_days": 14,
+    "min_batch_rows": 50,
+    "serving": {
+      "as_of_date": "2026-06-03",
+      "offset": -0.21083321193135388,
+      "source_batch": {
+        "start": "2026-03-09",
+        "end": "2026-03-09",
+        "n_rows": 200
+      }
+    }
+  },
+  "interval_formula": "value_eur in expm1(pred_ratio + offset \u00b1 q[level][bin] + ln(1 + trailing_league_median_eur))"
+}
