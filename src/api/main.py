@@ -67,6 +67,7 @@ def create_app(
     )
     limit = settings.max_concurrent_requests if max_concurrent is None else max_concurrent
     in_flight = 0
+    health_path = f"{settings.api_v1_prefix}/health"
 
     # Added before CORS so CORS wraps it: a browser must be able to read the 503
     @app.middleware("http")
@@ -74,8 +75,13 @@ def create_app(
         """Bounded concurrency per worker. Past the limit, queueing more requests would only make every
         one slower and hold database connections longer (found by the Phase 7 load test), so the excess
         gets an immediate 503 with Retry-After. Uvicorn's --limit-concurrency also counts idle keep-alive
-        connections, which browsers calling the API directly keep open."""
+        connections, which browsers calling the API directly keep open.
+
+        Health checks are never shed or counted: a worker that is shedding load is alive and working,
+        and a refused probe would get it marked unhealthy, or restarted, exactly when it is busiest."""
         nonlocal in_flight
+        if request.url.path == health_path:
+            return await call_next(request)
         if in_flight >= limit:
             return _busy()
         in_flight += 1

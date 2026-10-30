@@ -497,6 +497,7 @@ def test_past_the_concurrency_limit_requests_get_an_immediate_503(fake_predictor
         assert busy.status_code == 503 and busy.json()["detail"]["code"] == "busy"
         assert busy.headers["Retry-After"] == "1"
         assert busy.headers["access-control-allow-origin"] == "http://localhost:3000"  # a browser can read it
+        assert client.get("/v1/health").status_code == 200  # probes are never shed: the worker is alive
         release.set()
         assert [f.result().status_code for f in in_flight] == [200, 200]
         assert client.get("/v1/players?q=fake").status_code == 200  # finished requests free their slots

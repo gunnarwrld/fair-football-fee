@@ -38,7 +38,7 @@ flowchart LR
 - **The model is data, not code.** The API image holds code and serving libraries only. The active model version is read from `model_versions` every minute and loaded from the read-only `artifacts/` mount, so registering a new model needs no new image.
 - **The browser calls the API directly,** because the what-if rate limit is per client IP. Behind a reverse proxy, set `FORWARDED_ALLOW_IPS` to its address, so uvicorn takes the client from `X-Forwarded-For` only when a trusted proxy sent it.
 - **Redis is an optimization, never a dependency.** Any Redis error degrades to an uncached answer (`X-Cache: BYPASS`), and a circuit breaker stops retrying for 30 s.
-- **Bounded work.** Each worker takes at most 16 requests at once and waits at most 2 s for a database connection. Past that, the API answers 503 "busy" with `Retry-After` straight away instead of letting a queue grow, and requests give their database connection back before the model runs.
+- **Bounded work.** Each worker takes at most 16 requests at once and waits at most 2 s for a database connection. Past that, the API answers 503 "busy" with `Retry-After` straight away instead of letting a queue grow (health checks are never refused), and requests give their database connection back before the model runs.
 
 The reasons behind every choice are in [`docs/PROJECT_LOG.md`](docs/PROJECT_LOG.md).
 

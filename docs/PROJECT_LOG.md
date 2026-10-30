@@ -131,6 +131,7 @@ Results: `reports/phase4_explain_intervals.md` and `reports/model_card_v1.0.0.md
     3. The pool wait is 2 s and maps to the same 503.
   - **Effect of the fixes:** in 20 s probes at the same load, shedding alone answered everything (no 500s) but served about 22 requests/s. Adding the connection release raised that to about 103/s.
   - **Why not uvicorn's `--limit-concurrency`:** it counts open connections too, and browsers keep keep-alive connections to this API, so idle users would trigger 503s.
+  - **Health checks are exempt** (found by Cursor Bugbot on PR #8). The shedder used to count `/v1/health`, so under load Docker's health probe got the 503 too and marked a working container unhealthy. An orchestrator would then have restarted it exactly when it was busiest. Health requests now bypass the cap and aren't counted; the concurrency test pins this.
 - **Choosing `MAX_CONCURRENT_REQUESTS` = 16 per worker:**
   - Measured with Redis stopped at the full load, 30 s per value (k6 output). Served requests/s were about 103, 110 and 113 at caps of 8, 16 and 32. Served-valuation p95 was 203 ms, 386 ms and 779 ms.
   - Throughput is set by the CPU, so a higher cap only adds waiting time (Little's law). 16 halves the overload latency of 32 for about 2% less throughput, and it keeps twice the burst headroom of 8 for normal traffic.
