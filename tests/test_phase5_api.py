@@ -8,8 +8,11 @@ marked `db` run the real app against the local Postgres inside rolled-back trans
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,7 +24,10 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 from redis.exceptions import ConnectionError as RedisConnectionError
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
+from scripts.export_openapi import OPENAPI_PATH, openapi_text
 from src.api.cache import CacheStatus, RateLimiter, RedisCache
 from src.api.deps import get_repo
 from src.api.main import create_app
@@ -255,6 +261,9 @@ class FakeRepo:
         }
         self.features = {1: CurrentFeatures(1, date(2026, 6, 3), "fake-data", 20e6, dict(FAKE_FEATURES))}
 
+    def release(self) -> None:
+        pass
+
     def ping(self) -> bool:
         return True
 
@@ -401,6 +410,28 @@ def test_what_if_is_rate_limited_per_client(api: Any) -> None:
     assert api.client.get("/v1/players/1/valuation").status_code == 200  # GETs are not limited
 
 
+def _served_by_uvicorn(app: Any, peer: str, forwarded_allow_ips: str) -> TestClient:
+    """The app behind uvicorn's proxy-headers handling (on by default), reached from address `peer`."""
+    return TestClient(ProxyHeadersMiddleware(app, trusted_hosts=forwarded_allow_ips), client=(peer, 50000))
+
+
+def test_forwarded_for_is_believed_only_from_a_trusted_proxy(api: Any) -> None:
+    payload = {"player_id": 1, "scenario": {"goals_last_12m": 5}}
+
+    def codes(client: TestClient, forwarded_for: list[str]) -> list[int]:
+        return [client.post("/v1/valuations", json=payload, headers={"X-Forwarded-For": xff}).status_code
+                for xff in forwarded_for]
+
+    # A client that forges X-Forwarded-For is still counted by its own address
+    direct = _served_by_uvicorn(api.client.app, "198.51.100.7", "127.0.0.1")
+    assert codes(direct, [f"203.0.113.{i}" for i in range(6)]) == [200] * 5 + [429]
+    # Behind a proxy listed in FORWARDED_ALLOW_IPS, each forwarded client has its own budget...
+    proxied = _served_by_uvicorn(api.client.app, "10.0.0.2", "10.0.0.2")
+    assert codes(proxied, [f"203.0.113.{i}" for i in range(6)]) == [200] * 6
+    # ...and the proxy appends the real address, so entries a client prepends are ignored
+    assert codes(proxied, [f"192.0.2.{i}, 203.0.113.50" for i in range(6)]) == [200] * 5 + [429]
+
+
 def test_a_new_model_version_never_reads_old_cache_entries(api: Any, fake_predictor: Predictor) -> None:
     assert api.client.get("/v1/players/1/valuation").headers["X-Cache"] == "MISS"
     api.runtime._state = _state(fake_predictor, model_version="v-next")
@@ -437,6 +468,111 @@ def test_search_and_model_endpoints(api: Any) -> None:
     model = api.client.get("/v1/model").json()
     assert model["model_version"] == "v-test" and model["display_level"] == 0.8
     assert model["recentering"]["source_batch"]["start"] == "2026-03-09"
+
+
+# ----------------------------------------------------------------------------- deployment (Phase 7)
+
+def test_committed_openapi_contract_matches_the_app() -> None:
+    """frontend/openapi.json is the contract the UI's TypeScript types are generated from."""
+    assert OPENAPI_PATH.read_text(encoding="utf-8") == openapi_text(), "run `make api-types` and commit both files"
+
+
+def test_past_the_concurrency_limit_requests_get_an_immediate_503(fake_predictor: Predictor) -> None:
+    release, started = threading.Event(), threading.Semaphore(0)
+
+    class SlowRepo(FakeRepo):
+        def search_players(self, normalized_query: str, limit: int) -> list[PlayerHit]:
+            started.release()
+            release.wait(5)
+            return super().search_players(normalized_query, limit)
+
+    cache = _cache()
+    app = create_app(runtime=FakeRuntime(_state(fake_predictor)), cache=cache, limiter=RateLimiter(cache, 5),
+                     log_writer=lambda entry: None, max_concurrent=2)
+    app.dependency_overrides[get_repo] = SlowRepo
+    with TestClient(app) as client, ThreadPoolExecutor(2) as pool:
+        in_flight = [pool.submit(client.get, "/v1/players?q=fake") for _ in range(2)]
+        assert started.acquire(timeout=5) and started.acquire(timeout=5)
+        busy = client.get("/v1/players?q=fake", headers={"Origin": "http://localhost:3000"})
+        assert busy.status_code == 503 and busy.json()["detail"]["code"] == "busy"
+        assert busy.headers["Retry-After"] == "1"
+        assert busy.headers["access-control-allow-origin"] == "http://localhost:3000"  # a browser can read it
+        release.set()
+        assert [f.result().status_code for f in in_flight] == [200, 200]
+        assert client.get("/v1/players?q=fake").status_code == 200  # finished requests free their slots
+
+
+def test_the_model_runs_only_after_the_database_connection_is_released(fake_predictor: Predictor) -> None:
+    events: list[str] = []
+
+    class RecordingRepo(FakeRepo):
+        def player(self, player_id: int) -> PlayerRow | None:
+            events.append("read player")
+            return super().player(player_id)
+
+        def current_features(self, player_id: int) -> CurrentFeatures | None:
+            events.append("read features")
+            return super().current_features(player_id)
+
+        def market_value_on_or_before(self, player_id: int, as_of: date) -> tuple[float, date] | None:
+            events.append("read market value")
+            return super().market_value_on_or_before(player_id, as_of)
+
+        def release(self) -> None:
+            events.append("release connection")
+
+    class RecordingPredictor:
+        def __getattr__(self, name: str) -> Any:
+            return getattr(fake_predictor, name)
+
+        def value(self, features: dict[str, Any], league_median_eur: float) -> Any:
+            events.append("run model")
+            return fake_predictor.value(features, league_median_eur)
+
+    cache = _cache()
+    app = create_app(runtime=FakeRuntime(_state(RecordingPredictor())), cache=cache,
+                     limiter=RateLimiter(cache, 5), log_writer=lambda entry: None)
+    app.dependency_overrides[get_repo] = RecordingRepo
+    with TestClient(app) as client:
+        assert client.get("/v1/players/1/valuation").status_code == 200
+        assert events == ["read player", "read features", "read market value", "release connection", "run model"]
+        events.clear()
+        assert client.post("/v1/valuations", json={"player_id": 1, "scenario": {"age_years": 25}}).status_code == 200
+        assert events == ["read player", "read features", "release connection", "run model"]  # current one is cached
+
+
+def test_no_free_database_connection_is_a_503_busy_not_a_500(api: Any) -> None:
+    class ExhaustedPool(FakeRepo):
+        def search_players(self, normalized_query: str, limit: int) -> list[PlayerHit]:
+            raise PoolTimeoutError("QueuePool limit of size 5 overflow 10 reached, connection timed out")
+
+    api.client.app.dependency_overrides[get_repo] = ExhaustedPool
+    r = api.client.get("/v1/players?q=fake")
+    assert r.status_code == 503 and r.json()["detail"]["code"] == "busy" and r.headers["Retry-After"] == "1"
+
+
+_SERVE_ONE_PLAYER = """
+import json, sys
+from pathlib import Path
+import src.api.main  # the app module, as uvicorn imports it
+from src.ml.predictor import Predictor
+args = json.load(sys.stdin)
+Predictor.from_artifacts(Path(args["dir"]), args["conformal"]).value(args["features"], 20e6)
+print(json.dumps(sorted({name.split(".")[0] for name in sys.modules})))
+"""
+
+
+def test_serving_imports_nothing_outside_the_core_dependencies(fake_predictor: Predictor, tmp_path: Path) -> None:
+    """The API image installs only [project.dependencies]: loading a model and valuing a player must not
+    need the `ml` or `dev` extras (a fresh interpreter, so other tests' imports don't count)."""
+    fake_predictor.model.save_model(tmp_path / "model.ubj")
+    spec = {"features": MAIN_MODEL_FEATURES, "categorical_levels": LEVELS}
+    (tmp_path / "features.json").write_text(json.dumps(spec), encoding="utf-8")
+    args = {"dir": str(tmp_path), "conformal": FAKE_CONFORMAL, "features": FAKE_FEATURES}
+    run = subprocess.run([sys.executable, "-c", _SERVE_ONE_PLAYER], input=json.dumps(args), capture_output=True,
+                         text=True, check=False, cwd=Path(__file__).resolve().parents[1])
+    assert run.returncode == 0, run.stderr
+    assert not set(json.loads(run.stdout)) & {"lightgbm", "optuna", "shap", "matplotlib", "httpx", "pytest", "fakeredis"}
 
 
 # ----------------------------------------------------------------------------- real database

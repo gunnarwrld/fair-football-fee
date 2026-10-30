@@ -58,6 +58,10 @@ class Repository:
     def __init__(self, db: Session):
         self.db = db
 
+    def release(self) -> None:
+        """End the read-only transaction, so the connection goes back to the pool while the model runs."""
+        self.db.rollback()
+
     def ping(self) -> bool:
         try:
             self.db.execute(text("SELECT 1"))
