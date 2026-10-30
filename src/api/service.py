@@ -128,9 +128,12 @@ def _build(
 
 def current_valuation(repo: Repository, state: ServingState, player_id: int) -> ValuationOut:
     player, cf = _load(repo, state, player_id)
+    found = repo.market_value_on_or_before(player_id, cf.as_of_date)
+    # Every read is done: give the connection back before the CPU-bound model and SHAP run. Holding it
+    # through them made the pool, not the CPU, the limit once requests stopped hitting the cache.
+    repo.release()
     assert state.predictor is not None
     v = state.predictor.value(cf.features, cf.trailing_league_median_eur)
-    found = repo.market_value_on_or_before(player_id, cf.as_of_date)
     market = None if found is None else MarketValueOut(value_eur=found[0], date=found[1])
     return ValuationOut(**_build(player, cf, v, state, market, cf.features))
 
@@ -139,6 +142,7 @@ def whatif_valuation(
     repo: Repository, state: ServingState, player_id: int, scenario: dict[str, float], current: ValuationOut
 ) -> WhatIfOut:
     player, cf = _load(repo, state, player_id)
+    repo.release()  # as in current_valuation: no connection held while the model runs
     assert state.predictor is not None
     try:
         features, changes = apply_scenario(cf.features, scenario)

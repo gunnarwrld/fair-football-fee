@@ -76,6 +76,16 @@ def _git(*args: str) -> str:
         return "unknown"
 
 
+def _dist_version(*names: str) -> str:
+    """Version of the first installed distribution, read without importing it (native libraries)."""
+    for name in names:
+        try:
+            return importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+    return "not installed"
+
+
 def build_model(name: str, tuned_params: dict[str, Any]) -> Any:
     if name == "pos_age_median":
         return PositionAgeMedianBaseline()
@@ -273,7 +283,7 @@ def run(
         "evaluation_rows": {"val_calib": _range(val_calib), "test": _range(test)},
         "libraries": {
             "python": platform.python_version(),
-            "xgboost": importlib.metadata.version("xgboost"),
+            "xgboost": _dist_version("xgboost", "xgboost-cpu"),  # Linux installs the CPU-only build
             "lightgbm": importlib.metadata.version("lightgbm"),
             "scikit-learn": sklearn.__version__, "optuna": optuna.__version__, "numpy": np.__version__, "pandas": pd.__version__,
         },

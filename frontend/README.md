@@ -21,13 +21,22 @@ npm run typecheck  # route types + tsc
 npm run lint
 npm test           # vitest: formatters and chart math
 npm run build
-npm run api:types  # regenerate src/lib/api-types.ts from the running API's OpenAPI schema
+npm run api:types  # regenerate src/lib/api-types.ts from openapi.json
 ```
+
+`openapi.json` is the API contract, written from the Python code by `make api-types` at the repo root (which
+also runs `api:types`). Both files are committed; CI regenerates them and fails if either differs.
+
+## Docker
+
+`Dockerfile` builds the standalone server (`output: "standalone"` in `next.config.ts`) and runs it as the
+`node` user. `NEXT_PUBLIC_API_BASE_URL` is a build argument because Next.js inlines it into the browser
+bundle: `docker compose --profile app up` from the repo root (`make up`) passes it from `.env`.
 
 ## Design notes
 
-- **Types come from the API.** `src/lib/api-types.ts` is generated from FastAPI's OpenAPI schema, so a backend
-  change that breaks the UI fails `npm run typecheck`, not the browser.
+- **Types come from the API.** `src/lib/api-types.ts` is generated from FastAPI's OpenAPI schema (`openapi.json`),
+  so a backend change that breaks the UI fails `npm run typecheck`, not the browser.
 - **The browser calls the API directly.** The what-if rate limit is per client IP; routing calls through Next.js
   server code would put every visitor in one bucket. Pages are static shells (the player page reads its route
   param inside `<Suspense>`, as Cache Components requires) and data loads with SWR after hydration.

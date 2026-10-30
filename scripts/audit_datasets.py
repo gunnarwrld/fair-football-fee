@@ -25,7 +25,6 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.data.ingest import verify_and_hash_raw_sources
 from src.data.pit_sql import (
-    EC_COMP_IDS,
     INACTIVE_CLUB_IDS,
     INACTIVE_CLUB_NAMES,
     PINNED_SOURCES,

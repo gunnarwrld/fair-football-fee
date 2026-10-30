@@ -16,6 +16,7 @@ from typing import Any
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from src.api.cache import RateLimiter, RedisCache
 from src.api.predlog import PredictionLogWriter
@@ -28,11 +29,20 @@ from src.db.session import SessionLocal
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 
+def _busy() -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={"detail": {"code": "busy", "message": "the API is at capacity; retry in a moment"}},
+        headers={"Retry-After": "1"},
+    )
+
+
 def create_app(
     runtime: Runtime | None = None,
     cache: RedisCache | None = None,
     limiter: RateLimiter | None = None,
     log_writer: Callable[[dict[str, Any]], None] | None = None,
+    max_concurrent: int | None = None,
 ) -> FastAPI:
     logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -55,6 +65,31 @@ def create_app(
         "with prediction intervals, SHAP drivers and what-if scenarios.",
         lifespan=lifespan,
     )
+    limit = settings.max_concurrent_requests if max_concurrent is None else max_concurrent
+    in_flight = 0
+    health_path = f"{settings.api_v1_prefix}/health"
+
+    # Added before CORS so CORS wraps it: a browser must be able to read the 503
+    @app.middleware("http")
+    async def shed_load(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        """Bounded concurrency per worker. Past the limit, queueing more requests would only make every
+        one slower and hold database connections longer (found by the Phase 7 load test), so the excess
+        gets an immediate 503 with Retry-After. Uvicorn's --limit-concurrency also counts idle keep-alive
+        connections, which browsers calling the API directly keep open.
+
+        Health checks are never shed or counted: a worker that is shedding load is alive and working,
+        and a refused probe would get it marked unhealthy, or restarted, exactly when it is busiest."""
+        nonlocal in_flight
+        if request.url.path == health_path:
+            return await call_next(request)
+        if in_flight >= limit:
+            return _busy()
+        in_flight += 1
+        try:
+            return await call_next(request)
+        finally:
+            in_flight -= 1
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -70,6 +105,11 @@ def create_app(
         response = await call_next(request)
         response.headers["X-Request-ID"] = request.state.request_id
         return response
+
+    @app.exception_handler(PoolTimeoutError)
+    async def database_busy(request: Request, exc: PoolTimeoutError) -> JSONResponse:
+        # No database connection freed up within db_pool_timeout_seconds: overloaded, not broken
+        return _busy()
 
     @app.exception_handler(ApiError)
     async def api_error(request: Request, exc: ApiError) -> JSONResponse:

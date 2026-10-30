@@ -1,0 +1,1122 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "fair-football-fee API",
+    "description": "Estimates of a Premier League player's Transfermarkt crowd valuation (not a transfer fee), with prediction intervals, SHAP drivers and what-if scenarios.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/v1/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_v1_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/model": {
+      "get": {
+        "summary": "Model Info",
+        "operationId": "model_info_v1_model_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/players": {
+      "get": {
+        "summary": "Search Players",
+        "operationId": "search_players_v1_players_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 100,
+              "description": "Part of a name; accents and case are ignored",
+              "title": "Q"
+            },
+            "description": "Part of a name; accents and case are ignored"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 25,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerSearchOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/players/{player_id}/valuation": {
+      "get": {
+        "summary": "Player Valuation",
+        "operationId": "player_valuation_v1_players__player_id__valuation_get",
+        "parameters": [
+          {
+            "name": "player_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "Player Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValuationOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/valuations": {
+      "post": {
+        "summary": "What If",
+        "operationId": "what_if_v1_valuations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhatIfIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhatIfOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AdjustmentOut": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": "Latest update-round adjustment"
+          },
+          "phi": {
+            "type": "number",
+            "title": "Phi"
+          },
+          "effect_pct": {
+            "type": "number",
+            "title": "Effect Pct"
+          },
+          "source_batch": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Batch"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phi",
+          "effect_pct",
+          "source_batch"
+        ],
+        "title": "AdjustmentOut"
+      },
+      "ContextOut": {
+        "properties": {
+          "injury_days_12m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Injury Days 12M",
+            "description": "None when the player isn't in the injury source"
+          },
+          "injury_days_24m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Injury Days 24M"
+          },
+          "injury_count_24m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Injury Count 24M"
+          },
+          "contract_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract Expires At",
+            "description": "Current contract end; not a model feature"
+          }
+        },
+        "type": "object",
+        "required": [
+          "injury_days_12m",
+          "injury_days_24m",
+          "injury_count_24m",
+          "contract_expires_at"
+        ],
+        "title": "ContextOut",
+        "description": "Shown read-only: none of these can be changed in a what-if."
+      },
+      "DriverOut": {
+        "properties": {
+          "feature": {
+            "type": "string",
+            "title": "Feature"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "phi": {
+            "type": "number",
+            "title": "Phi",
+            "description": "SHAP value in log units"
+          },
+          "effect_pct": {
+            "type": "number",
+            "title": "Effect Pct",
+            "description": "Multiplicative effect on the valuation: exp(phi) - 1"
+          }
+        },
+        "type": "object",
+        "required": [
+          "feature",
+          "label",
+          "value",
+          "phi",
+          "effect_pct"
+        ],
+        "title": "DriverOut"
+      },
+      "FeatureChangeOut": {
+        "properties": {
+          "feature": {
+            "type": "string",
+            "title": "Feature"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          }
+        },
+        "type": "object",
+        "required": [
+          "feature",
+          "before",
+          "after"
+        ],
+        "title": "FeatureChangeOut"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "ok, degraded (Redis down, still serving) or unavailable"
+          },
+          "database": {
+            "type": "boolean",
+            "title": "Database"
+          },
+          "redis": {
+            "type": "boolean",
+            "title": "Redis"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          },
+          "data_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Version"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Problems"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "database",
+          "redis",
+          "model_version",
+          "data_version",
+          "problems"
+        ],
+        "title": "HealthOut"
+      },
+      "InputsOut": {
+        "properties": {
+          "age_years": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age Years"
+          },
+          "minutes_last_12m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minutes Last 12M"
+          },
+          "appearances_last_12m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Appearances Last 12M"
+          },
+          "goals_last_12m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goals Last 12M"
+          },
+          "assists_last_12m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assists Last 12M"
+          }
+        },
+        "type": "object",
+        "required": [
+          "age_years",
+          "minutes_last_12m",
+          "appearances_last_12m",
+          "goals_last_12m",
+          "assists_last_12m"
+        ],
+        "title": "InputsOut",
+        "description": "The what-if inputs behind this valuation: current values, or the scenario's for a what-if."
+      },
+      "IntervalOut": {
+        "properties": {
+          "level": {
+            "type": "number",
+            "title": "Level"
+          },
+          "low_eur": {
+            "type": "number",
+            "title": "Low Eur"
+          },
+          "high_eur": {
+            "type": "number",
+            "title": "High Eur"
+          }
+        },
+        "type": "object",
+        "required": [
+          "level",
+          "low_eur",
+          "high_eur"
+        ],
+        "title": "IntervalOut"
+      },
+      "MarketValueOut": {
+        "properties": {
+          "value_eur": {
+            "type": "number",
+            "title": "Value Eur"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value_eur",
+          "date"
+        ],
+        "title": "MarketValueOut"
+      },
+      "ModelOut": {
+        "properties": {
+          "model_version": {
+            "type": "string",
+            "title": "Model Version"
+          },
+          "model_type": {
+            "type": "string",
+            "title": "Model Type"
+          },
+          "trained_at": {
+            "type": "string",
+            "title": "Trained At"
+          },
+          "training_data_version": {
+            "type": "string",
+            "title": "Training Data Version"
+          },
+          "serving_data_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serving Data Version"
+          },
+          "display_level": {
+            "type": "number",
+            "title": "Display Level"
+          },
+          "interval_levels": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Interval Levels"
+          },
+          "interval_method": {
+            "type": "string",
+            "title": "Interval Method"
+          },
+          "recentering": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Recentering"
+          },
+          "test_metrics": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Test Metrics"
+          },
+          "features": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Features"
+          },
+          "whatif_bounds": {
+            "additionalProperties": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "object",
+            "title": "Whatif Bounds",
+            "description": "Accepted range of each what-if input"
+          },
+          "disclaimer": {
+            "type": "string",
+            "title": "Disclaimer",
+            "default": "Model estimate of the Transfermarkt crowd valuation, not a transfer fee."
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_version",
+          "model_type",
+          "trained_at",
+          "training_data_version",
+          "serving_data_version",
+          "display_level",
+          "interval_levels",
+          "interval_method",
+          "recentering",
+          "test_metrics",
+          "features",
+          "whatif_bounds"
+        ],
+        "title": "ModelOut"
+      },
+      "PlayerHitOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name"
+          },
+          "position_group": {
+            "type": "string",
+            "title": "Position Group"
+          },
+          "current_club": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Club"
+          },
+          "has_valuation": {
+            "type": "boolean",
+            "title": "Has Valuation",
+            "description": "False when the player is outside the model's population"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "full_name",
+          "position_group",
+          "current_club",
+          "has_valuation"
+        ],
+        "title": "PlayerHitOut"
+      },
+      "PlayerOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name"
+          },
+          "position_group": {
+            "type": "string",
+            "title": "Position Group"
+          },
+          "current_club": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Club"
+          },
+          "nationality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nationality"
+          },
+          "age": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "full_name",
+          "position_group",
+          "current_club",
+          "nationality",
+          "age"
+        ],
+        "title": "PlayerOut"
+      },
+      "PlayerSearchOut": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/PlayerHitOut"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "results"
+        ],
+        "title": "PlayerSearchOut"
+      },
+      "ScenarioIn": {
+        "properties": {
+          "age_years": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 44.0,
+                "minimum": 17.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age Years"
+          },
+          "minutes_last_12m": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 5800.0,
+                "minimum": 450.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minutes Last 12M"
+          },
+          "appearances_last_12m": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 68.0,
+                "minimum": 5.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Appearances Last 12M"
+          },
+          "goals_last_12m": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 51.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goals Last 12M"
+          },
+          "assists_last_12m": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 31.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assists Last 12M"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ScenarioIn",
+        "description": "Inputs you set are taken as given; 12-month counts you don't set keep their per-minute rate."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "ValuationOut": {
+        "properties": {
+          "player": {
+            "$ref": "#/components/schemas/PlayerOut"
+          },
+          "as_of_date": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of Date"
+          },
+          "model_version": {
+            "type": "string",
+            "title": "Model Version"
+          },
+          "data_version": {
+            "type": "string",
+            "title": "Data Version"
+          },
+          "estimate_eur": {
+            "type": "number",
+            "title": "Estimate Eur"
+          },
+          "interval": {
+            "$ref": "#/components/schemas/IntervalOut",
+            "description": "The displayed interval"
+          },
+          "intervals": {
+            "items": {
+              "$ref": "#/components/schemas/IntervalOut"
+            },
+            "type": "array",
+            "title": "Intervals"
+          },
+          "market_value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MarketValueOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Transfermarkt value published on or before as_of_date"
+          },
+          "league_median_eur": {
+            "type": "number",
+            "title": "League Median Eur"
+          },
+          "baseline_eur": {
+            "type": "number",
+            "title": "Baseline Eur",
+            "description": "A typical player at today's league level; drivers multiply this"
+          },
+          "drivers": {
+            "items": {
+              "$ref": "#/components/schemas/DriverOut"
+            },
+            "type": "array",
+            "title": "Drivers",
+            "description": "Largest drivers first"
+          },
+          "other_drivers_effect_pct": {
+            "type": "number",
+            "title": "Other Drivers Effect Pct"
+          },
+          "adjustment": {
+            "$ref": "#/components/schemas/AdjustmentOut"
+          },
+          "inputs": {
+            "$ref": "#/components/schemas/InputsOut"
+          },
+          "context": {
+            "$ref": "#/components/schemas/ContextOut"
+          },
+          "disclaimer": {
+            "type": "string",
+            "title": "Disclaimer",
+            "default": "Model estimate of the Transfermarkt crowd valuation, not a transfer fee."
+          }
+        },
+        "type": "object",
+        "required": [
+          "player",
+          "as_of_date",
+          "model_version",
+          "data_version",
+          "estimate_eur",
+          "interval",
+          "intervals",
+          "market_value",
+          "league_median_eur",
+          "baseline_eur",
+          "drivers",
+          "other_drivers_effect_pct",
+          "adjustment",
+          "inputs",
+          "context"
+        ],
+        "title": "ValuationOut"
+      },
+      "WhatIfIn": {
+        "properties": {
+          "player_id": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Player Id"
+          },
+          "scenario": {
+            "$ref": "#/components/schemas/ScenarioIn"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "player_id",
+          "scenario"
+        ],
+        "title": "WhatIfIn"
+      },
+      "WhatIfOut": {
+        "properties": {
+          "player": {
+            "$ref": "#/components/schemas/PlayerOut"
+          },
+          "as_of_date": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of Date"
+          },
+          "model_version": {
+            "type": "string",
+            "title": "Model Version"
+          },
+          "data_version": {
+            "type": "string",
+            "title": "Data Version"
+          },
+          "estimate_eur": {
+            "type": "number",
+            "title": "Estimate Eur"
+          },
+          "interval": {
+            "$ref": "#/components/schemas/IntervalOut",
+            "description": "The displayed interval"
+          },
+          "intervals": {
+            "items": {
+              "$ref": "#/components/schemas/IntervalOut"
+            },
+            "type": "array",
+            "title": "Intervals"
+          },
+          "market_value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MarketValueOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Transfermarkt value published on or before as_of_date"
+          },
+          "league_median_eur": {
+            "type": "number",
+            "title": "League Median Eur"
+          },
+          "baseline_eur": {
+            "type": "number",
+            "title": "Baseline Eur",
+            "description": "A typical player at today's league level; drivers multiply this"
+          },
+          "drivers": {
+            "items": {
+              "$ref": "#/components/schemas/DriverOut"
+            },
+            "type": "array",
+            "title": "Drivers",
+            "description": "Largest drivers first"
+          },
+          "other_drivers_effect_pct": {
+            "type": "number",
+            "title": "Other Drivers Effect Pct"
+          },
+          "adjustment": {
+            "$ref": "#/components/schemas/AdjustmentOut"
+          },
+          "inputs": {
+            "$ref": "#/components/schemas/InputsOut"
+          },
+          "context": {
+            "$ref": "#/components/schemas/ContextOut"
+          },
+          "disclaimer": {
+            "type": "string",
+            "title": "Disclaimer",
+            "default": "Model estimate of the Transfermarkt crowd valuation, not a transfer fee."
+          },
+          "scenario": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Scenario"
+          },
+          "current_estimate_eur": {
+            "type": "number",
+            "title": "Current Estimate Eur"
+          },
+          "change_pct": {
+            "type": "number",
+            "title": "Change Pct"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/FeatureChangeOut"
+            },
+            "type": "array",
+            "title": "Changes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "player",
+          "as_of_date",
+          "model_version",
+          "data_version",
+          "estimate_eur",
+          "interval",
+          "intervals",
+          "market_value",
+          "league_median_eur",
+          "baseline_eur",
+          "drivers",
+          "other_drivers_effect_pct",
+          "adjustment",
+          "inputs",
+          "context",
+          "scenario",
+          "current_estimate_eur",
+          "change_pct",
+          "changes"
+        ],
+        "title": "WhatIfOut"
+      }
+    }
+  }
+}
