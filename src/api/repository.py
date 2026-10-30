@@ -21,6 +21,7 @@ class PlayerRow:
     position_group: str
     current_club: str | None
     nationality: str | None
+    contract_expires_at: date | None = None
 
 
 @dataclass(frozen=True)
@@ -72,7 +73,9 @@ class Repository:
         p = self.db.get(Player, player_id)
         if p is None:
             return None
-        return PlayerRow(p.id, p.tm_player_id, p.full_name, p.position_group, p.current_club, p.nationality)
+        return PlayerRow(
+            p.id, p.tm_player_id, p.full_name, p.position_group, p.current_club, p.nationality, p.contract_expires_at
+        )
 
     def current_features(self, player_id: int) -> CurrentFeatures | None:
         f = self.db.get(PlayerCurrentFeatures, player_id)

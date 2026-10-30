@@ -16,18 +16,23 @@ from src.api.repository import CurrentFeatures, PlayerRow, Repository
 from src.api.runtime import ServingState
 from src.api.schemas import (
     AdjustmentOut,
+    ContextOut,
     DriverOut,
     FeatureChangeOut,
+    InputsOut,
     IntervalOut,
     MarketValueOut,
     PlayerOut,
     ValuationOut,
     WhatIfOut,
 )
-from src.features.whatif import ScenarioError, apply_scenario
+from src.features.whatif import ScenarioError, apply_scenario, scenario_inputs
 from src.ml.predictor import Valuation
 
 TOP_DRIVERS = 5
+# Part of every cache key: bump it whenever the response shape changes, so a deploy never parses
+# JSON cached by the previous version (keys also carry the model and data versions)
+RESPONSE_SCHEMA = "s2"
 
 
 class ApiError(Exception):
@@ -52,13 +57,13 @@ class InvalidScenario(ApiError):
 
 
 def valuation_key(state: ServingState, player_id: int) -> str:
-    return f"valuation:{state.model_version}:{state.data_version}:{player_id}"
+    return f"valuation:{RESPONSE_SCHEMA}:{state.model_version}:{state.data_version}:{player_id}"
 
 
 def whatif_key(state: ServingState, player_id: int, scenario: dict[str, float]) -> str:
     payload = json.dumps({"player_id": player_id, "scenario": scenario}, sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(payload.encode()).hexdigest()
-    return f"valuation:{state.model_version}:{state.data_version}:whatif:{digest}"
+    return f"valuation:{RESPONSE_SCHEMA}:{state.model_version}:{state.data_version}:whatif:{digest}"
 
 
 def require_servable(state: ServingState) -> None:
@@ -83,8 +88,10 @@ def _load(repo: Repository, state: ServingState, player_id: int) -> tuple[Player
 
 
 def _build(
-    player: PlayerRow, cf: CurrentFeatures, v: Valuation, state: ServingState, market: MarketValueOut | None
+    player: PlayerRow, cf: CurrentFeatures, v: Valuation, state: ServingState, market: MarketValueOut | None,
+    features: dict[str, Any],
 ) -> dict[str, Any]:
+    """Response fields shared by a current valuation and a what-if; `features` is the row valued."""
     predictor = state.predictor
     assert predictor is not None
     intervals = [IntervalOut(level=i.level, low_eur=i.low_eur, high_eur=i.high_eur) for i in v.intervals]
@@ -109,6 +116,13 @@ def _build(
             phi=v.offset, effect_pct=float(np.expm1(v.offset)),
             source_batch=rec["serving"]["source_batch"] if rec["enabled"] else None,
         ),
+        "inputs": InputsOut(**scenario_inputs(features)),
+        "context": ContextOut(
+            injury_days_12m=cf.features.get("injury_days_12m"),
+            injury_days_24m=cf.features.get("injury_days_24m"),
+            injury_count_24m=cf.features.get("injury_count_24m"),
+            contract_expires_at=player.contract_expires_at,
+        ),
     }
 
 
@@ -118,7 +132,7 @@ def current_valuation(repo: Repository, state: ServingState, player_id: int) -> 
     v = state.predictor.value(cf.features, cf.trailing_league_median_eur)
     found = repo.market_value_on_or_before(player_id, cf.as_of_date)
     market = None if found is None else MarketValueOut(value_eur=found[0], date=found[1])
-    return ValuationOut(**_build(player, cf, v, state, market))
+    return ValuationOut(**_build(player, cf, v, state, market, cf.features))
 
 
 def whatif_valuation(
@@ -132,7 +146,7 @@ def whatif_valuation(
         raise InvalidScenario(str(exc), code="invalid_scenario") from exc
     v = state.predictor.value(features, cf.trailing_league_median_eur)
     return WhatIfOut(
-        **_build(player, cf, v, state, current.market_value),
+        **_build(player, cf, v, state, current.market_value, features),
         scenario=scenario,
         current_estimate_eur=current.estimate_eur,
         change_pct=v.estimate_eur / current.estimate_eur - 1,

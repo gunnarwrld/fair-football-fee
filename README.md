@@ -11,7 +11,7 @@ The model covers **Premier League players with at least 450 tracked minutes in t
 ## Stack
 - **Data & ML**: Python 3.12, DuckDB, PyArrow (Parquet Lakehouse), Pandas, Scikit-Learn, XGBoost, LightGBM, Optuna, TreeSHAP, Split Conformal Prediction
 - **Backend & Caching**: FastAPI, SQLAlchemy 2.0 + Alembic, PostgreSQL 16 (6 operational serving tables), Redis 7 (cache-aside with stampede lock and graceful fallback)
-- **Frontend**: Next.js (App Router)
+- **Frontend**: Next.js 16 (App Router), React 19, Tailwind 4, SWR; TypeScript types generated from the API's OpenAPI schema
 
 ## Reports
 - [Phase 3 evaluation](reports/phase3_evaluation.md): baselines, tuned XGBoost, error slices, secondary experiments.
@@ -30,7 +30,10 @@ make calibrate   # Phase 4 intervals, recentering, report + model card
 make db          # Postgres + Redis in Docker, migrations, serving tables
 make register    # mark the model active in model_versions
 make api         # http://localhost:8000/docs
+make web         # the UI on http://localhost:3000 (needs Node 20+; run `npm --prefix frontend install` once)
 ```
+
+The UI has player search, a valuation page (estimate vs the Transfermarkt value, its prediction interval and the SHAP drivers behind it) and a what-if panel.
 
 | Endpoint | What it returns |
 |---|---|
