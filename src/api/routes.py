@@ -30,6 +30,7 @@ from src.api.service import (
     whatif_valuation,
 )
 from src.data.clean import normalize_player_name
+from src.features.whatif import WHATIF_BOUNDS
 
 router = APIRouter()
 
@@ -90,9 +91,10 @@ def model_info(state: StateDep) -> ModelOut:
             "source_batch": rec["serving"]["source_batch"], "batch_gap_days": rec["batch_gap_days"],
             "min_batch_rows": rec["min_batch_rows"],
         },
-        test_metrics={"point": metrics.get("test"), "coverage": metrics.get("test_coverage"),
-                      "best_baseline": metrics.get("best_baseline")},
+        test_metrics={"point": metrics.get("test"), "point_without_recentering": metrics.get("test_without_recentering"),
+                      "coverage": metrics.get("test_coverage"), "best_baseline": metrics.get("best_baseline")},
         features=m["feature_list"],
+        whatif_bounds=WHATIF_BOUNDS,
     )
 
 

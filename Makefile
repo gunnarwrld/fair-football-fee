@@ -1,7 +1,7 @@
 # fair-football-fee — common commands (macOS/Linux). Uses the project virtualenv.
 PY ?= .venv/bin/python
 
-.PHONY: api doctor help db-up db-down migrate load-db db ingest clean-data features pipeline test test-unit lint train train-retune report calibrate register
+.PHONY: api web web-check doctor help db-up db-down migrate load-db db ingest clean-data features pipeline test test-unit lint train train-retune report calibrate register
 
 doctor:
 	@$(PY) -c "import xgboost, lightgbm; print('xgboost', xgboost.__version__, '| lightgbm', lightgbm.__version__, '| native libs OK')" \
@@ -17,6 +17,8 @@ help:
 	@echo "calibrate    Phase 4: TreeSHAP checks, conformal intervals, recentering, report + model card"
 	@echo "register     write the model to model_versions and mark it active (needs make db)"
 	@echo "api          run the FastAPI service on http://localhost:8000 (docs at /docs; needs make db)"
+	@echo "web          run the Next.js UI on http://localhost:3000 (needs make api)"
+	@echo "web-check    frontend type-check, lint, unit tests and production build"
 	@echo "test / lint  full pytest suite / ruff"
 
 db-up:
@@ -65,6 +67,15 @@ register:
 
 api:
 	$(PY) -m uvicorn src.api.main:app --reload --port 8000
+
+web:
+	npm --prefix frontend run dev
+
+web-check:
+	npm --prefix frontend run typecheck
+	npm --prefix frontend run lint
+	npm --prefix frontend test
+	npm --prefix frontend run build
 
 test:
 	$(PY) -m pytest -q
