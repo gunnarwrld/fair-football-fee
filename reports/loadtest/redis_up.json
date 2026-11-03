@@ -1,0 +1,109 @@
+{
+  "meta": {
+    "run": "redis_up",
+    "expect": "fast",
+    "redis": "up",
+    "duration": "60s",
+    "rates_per_second": {
+      "valuation": 200,
+      "search": 40,
+      "whatif": 20
+    },
+    "p95_budget_ms": {
+      "valuation": 50,
+      "search": 100,
+      "whatif": 300
+    },
+    "shed_p99_ms": null,
+    "players": 276,
+    "api_config": {
+      "workers": 2,
+      "max_concurrent_requests": 16,
+      "db_connections": 15,
+      "db_pool_timeout_s": 2
+    },
+    "docker_cpus": "10",
+    "docker_memory_bytes": "8217059328",
+    "git": "99eacbe-dirty",
+    "k6_image": "grafana/k6:2.2.0",
+    "finished_at": "2026-10-30T09:01:48.719Z"
+  },
+  "requests": {
+    "valuation": {
+      "served_ms": {
+        "p(99)": 103.26066442999986,
+        "max": 265.817917,
+        "count": 11922,
+        "med": 3.878417,
+        "p(95)": 47.9965042
+      },
+      "any_ms": {
+        "count": 12001,
+        "med": 3.891833,
+        "p(95)": 48.466584,
+        "p(99)": 103.520417,
+        "max": 265.817917
+      },
+      "ok_rate": 0.9934172152320639,
+      "shed_rate": 0.006582784767936005,
+      "error_rate": 0,
+      "cache_hit_rate": 1,
+      "thresholds": {
+        "valuation_ms p(95)<50": true,
+        "valuation_error rate==0": true,
+        "valuation_shed rate<0.01": true
+      }
+    },
+    "search": {
+      "served_ms": {
+        "p(99)": 110.25550574999991,
+        "max": 245.3885,
+        "count": 2384,
+        "med": 11.537521,
+        "p(95)": 49.2554331
+      },
+      "any_ms": {
+        "count": 2401,
+        "med": 11.527875,
+        "p(95)": 49.769583,
+        "p(99)": 109.478542,
+        "max": 245.3885
+      },
+      "ok_rate": 0.9929196168263223,
+      "shed_rate": 0.007080383173677634,
+      "error_rate": 0,
+      "cache_hit_rate": 0,
+      "thresholds": {
+        "search_ms p(95)<100": true,
+        "search_error rate==0": true,
+        "search_shed rate<0.01": true
+      }
+    },
+    "whatif": {
+      "served_ms": {
+        "p(95)": 207.86358349999983,
+        "p(99)": 314.2529704999998,
+        "max": 440.168125,
+        "count": 1191,
+        "med": 32.962625
+      },
+      "any_ms": {
+        "med": 32.882375,
+        "p(95)": 206.265333,
+        "p(99)": 312.483708,
+        "max": 440.168125,
+        "count": 1201
+      },
+      "ok_rate": 0.9916736053288926,
+      "shed_rate": 0.00832639467110741,
+      "error_rate": 0,
+      "cache_hit_rate": 0.0016792611251049538,
+      "thresholds": {
+        "whatif_ms p(95)<300": true,
+        "whatif_error rate==0": true,
+        "whatif_shed rate<0.01": true
+      }
+    }
+  },
+  "dropped_iterations": 0
+}

@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/v1"
     # Per client IP, applied to POST /v1/valuations only (the one path a client can make uncacheable)
     rate_limit_per_minute: int = 60
+    # Per worker: past this many requests in flight, answer 503 at once instead of growing a queue
+    max_concurrent_requests: int = 16
+    # How long a request waits for a free database connection before a 503 (SQLAlchemy's default: 30 s)
+    db_pool_timeout_seconds: float = 2.0
     cors_origins: list[str] = ["http://localhost:3000"]
     log_level: str = "INFO"
 
