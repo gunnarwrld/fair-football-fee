@@ -3,7 +3,8 @@
 Builds:
   1. `data/features/priors.json` (Empirical Bayes shrinkage priors & train league medians)
   2. `data/features/valuation_snapshots.parquet` (all 19,938 historical GB1 + EC1 snapshots)
-  3. `data/features/current_serving_features.parquet` (active supported players for API serving)
+  3. `data/features/current_serving_features.parquet` (active supported players for API serving;
+     Phase 2.1: Premier League players with >= 450 tracked minutes in the prior 365 days)
   4. `data/features/feature_manifest.json`
   5. PostgreSQL `player_current_features` rows (single-transaction upsert + stale row deletion)
 """
@@ -23,9 +24,6 @@ from sqlalchemy.orm import Session
 
 from src.config import settings
 from src.data.pit_sql import (
-    EC_ALL_COMP_IDS,
-    EC_COMP_IDS,
-    EC_TIER2_COMP_IDS,
     INACTIVE_CLUB_IDS,
     INACTIVE_CLUB_NAMES,
 )
@@ -36,6 +34,8 @@ from src.features.engineer import (
     MAIN_MODEL_CATEGORICAL_FEATURES,
     MAIN_MODEL_FEATURES,
     MAIN_MODEL_NUMERIC_FEATURES,
+    POPULATION_MIN_TRACKED_MINUTES_12M,
+    SUPPORTED_LEAGUES,
     VALUE_UPDATE_MODEL_FEATURES,
     EmpiricalBayesPriors,
     build_serving_feature_dict,
@@ -44,8 +44,23 @@ from src.features.engineer import (
 )
 
 
-def load_clean_tables(clean_dir: Path | None = None) -> dict[str, pd.DataFrame]:
+def season_year_for(d: date) -> int:
+    """Football season start year (July-June cycle) for a date."""
+    return d.year if d.month >= 7 else d.year - 1
+
+
+def load_clean_tables(
+    clean_dir: Path | None = None, raw_dir: Path | None = None
+) -> dict[str, pd.DataFrame]:
     clean_dir = clean_dir or settings.clean_data_dir
+    raw_dir = raw_dir or settings.raw_data_dir
+    injury_coverage = (
+        pd.read_parquet(raw_dir / "salimt_profiles.parquet", columns=["player_id"])
+        .rename(columns={"player_id": "tm_player_id"})
+        .dropna()
+        .astype({"tm_player_id": "int64"})
+        .drop_duplicates()
+    )
     return {
         "players": pd.read_parquet(clean_dir / "players.parquet"),
         "valuations": pd.read_parquet(clean_dir / "valuations.parquet"),
@@ -54,6 +69,8 @@ def load_clean_tables(clean_dir: Path | None = None) -> dict[str, pd.DataFrame]:
         "player_seasons": pd.read_parquet(clean_dir / "player_seasons.parquet"),
         "transfers": pd.read_parquet(clean_dir / "transfers.parquet"),
         "injuries": pd.read_parquet(clean_dir / "injuries.parquet"),
+        # Players present in the injury source (salimt profiles); others get NULL injury features
+        "injury_coverage": injury_coverage,
     }
 
 
@@ -61,21 +78,26 @@ def select_active_serving_requests(
     *,
     clean_dir: Path | None = None,
     raw_dir: Path | None = None,
-    max_complete_val_date: str = "2026-06-12",
+    max_complete_val_date: str,
     as_of_date_override: date | None = None,
 ) -> pd.DataFrame:
-    """Select active supported players for `player_current_features`.
+    """Select candidate active players for `player_current_features`.
 
-    A player receives a `player_current_features` row if and only if:
+    A player is a serving candidate if and only if:
       1. Their latest valuation across all career leagues (`all_valuations.parquet`)
-         is within the last 365 days of `max_complete_val_date` (`>= 2025-06-12`).
+         is within the 365 days before `max_complete_val_date` (from `MANIFEST.json`).
       2. Neither their latest valuation club nor their profile club is a retired/unattached
          pseudo-club (`123`, `515`, `75`, `2113` or `'Retired'`, `'Without Club'`, etc.),
          and they have not subsequently transferred to another club in `transfers.parquet`.
-      3. Their club's 2025 season league is `GB1` or Tier-1 `EC1`.
+      3. Their club plays in a supported league (`GB1`) in the season containing
+         `max_complete_val_date`.
+    `run_feature_pipeline` then keeps only candidates inside the modeling population
+    (>= 450 tracked minutes in the prior 365 days).
     """
     clean_dir = clean_dir or settings.clean_data_dir
     raw_dir = raw_dir or settings.raw_data_dir
+    current_season = season_year_for(date.fromisoformat(max_complete_val_date))
+    supported_leagues_sql = "(" + ", ".join(f"'{lg}'" for lg in SUPPORTED_LEAGUES) + ")"
 
     con = duckdb.connect()
     active_df = con.sql(f"""
@@ -90,44 +112,17 @@ def select_active_serving_requests(
             FROM read_parquet('{(clean_dir / "all_valuations.parquet").as_posix()}')
             GROUP BY 1
         ),
-        parsed_ec AS (
-            SELECT
-                CAST(tm_club_id AS BIGINT) AS club_id,
-                competition_id,
-                CASE
-                    WHEN regexp_matches(TRIM(season_name), '^[0-9]{{4}}$')
-                    THEN CAST(TRIM(season_name) AS INTEGER)
-                    WHEN regexp_matches(TRIM(season_name), '^[0-9]{{2}}/[0-9]{{2}}$')
-                    THEN 2000 + CAST(split_part(TRIM(season_name), '/', 1) AS INTEGER)
-                    ELSE NULL
-                END AS season_year
-            FROM read_parquet('{(raw_dir / "ec1_performances.parquet").as_posix()}')
-            WHERE tm_club_id IS NOT NULL
-              AND competition_id IN {EC_ALL_COMP_IDS}
-        ),
-        ec1_clubs_2025 AS (
-            SELECT DISTINCT club_id
-            FROM parsed_ec
-            WHERE competition_id IN {EC_COMP_IDS} AND season_year = 2025
-            EXCEPT
-            SELECT DISTINCT club_id
-            FROM parsed_ec
-            WHERE competition_id IN {EC_TIER2_COMP_IDS} AND season_year = 2025
-        ),
-        club_2025 AS (
-            SELECT DISTINCT CAST(club_id AS BIGINT) AS club_id, 'GB1' AS league_2025
+        club_current AS (
+            SELECT DISTINCT CAST(club_id AS BIGINT) AS club_id, competition_id AS league_current
             FROM (
-                SELECT home_club_id AS club_id
+                SELECT home_club_id AS club_id, competition_id
                 FROM read_parquet('{(raw_dir / "games.parquet").as_posix()}')
-                WHERE competition_id = 'GB1' AND season = 2025
+                WHERE competition_id IN {supported_leagues_sql} AND season = {current_season}
                 UNION
-                SELECT away_club_id AS club_id
+                SELECT away_club_id AS club_id, competition_id
                 FROM read_parquet('{(raw_dir / "games.parquet").as_posix()}')
-                WHERE competition_id = 'GB1' AND season = 2025
+                WHERE competition_id IN {supported_leagues_sql} AND season = {current_season}
             )
-            UNION
-            SELECT DISTINCT CAST(club_id AS BIGINT) AS club_id, 'EC1' AS league_2025
-            FROM ec1_clubs_2025
         ),
         latest_transfer AS (
             SELECT
@@ -150,7 +145,7 @@ def select_active_serving_requests(
             lv.latest_val_date AS as_of_date,
             lv.latest_val_club_id AS tm_club_id,
             COALESCE(lv.latest_val_club_name, cp.current_club) AS club_name,
-            c25.league_2025 AS league_code,
+            cc.league_current AS league_code,
             lv.latest_market_value_eur AS market_value_eur,
             vc.valid_contract_years_remaining
         FROM latest_any_val lv
@@ -158,15 +153,15 @@ def select_active_serving_requests(
           ON lv.tm_player_id = CAST(rp.player_id AS BIGINT)
         JOIN read_parquet('{(clean_dir / "players.parquet").as_posix()}') cp
           ON lv.tm_player_id = CAST(cp.tm_player_id AS BIGINT)
-        JOIN club_2025 c25
-          ON lv.latest_val_club_id = c25.club_id
+        JOIN club_current cc
+          ON lv.latest_val_club_id = cc.club_id
         LEFT JOIN latest_transfer lt
           ON lv.tm_player_id = lt.tm_player_id
         LEFT JOIN val_contract vc
           ON lv.tm_player_id = vc.tm_player_id
          AND lv.latest_val_date = vc.valuation_date
         WHERE lv.latest_val_date >= CAST(DATE '{max_complete_val_date}' - INTERVAL 365 DAY AS DATE)
-          AND lv.latest_val_league IN ('GB1', 'EC1')
+          AND lv.latest_val_league IN {supported_leagues_sql}
           AND lv.latest_val_club_id NOT IN {INACTIVE_CLUB_IDS}
           AND rp.current_club_id NOT IN {INACTIVE_CLUB_IDS}
           AND COALESCE(rp.current_club_name, '') NOT IN {INACTIVE_CLUB_NAMES}
@@ -206,6 +201,7 @@ def compute_serving_features_for_requests(
         valuations_df=clean_tables["valuations"],
         all_valuations_df=clean_tables["all_valuations"],
         priors=priors,
+        injury_coverage_df=clean_tables.get("injury_coverage"),
     )
 
     records: list[dict[str, Any]] = []
@@ -219,6 +215,7 @@ def compute_serving_features_for_requests(
                 "league_code": str(row["league_code"]),
                 "trailing_league_median_eur": float(row["trailing_league_median_eur"]),
                 "features_json": json.dumps(feat_dict, sort_keys=True),
+                "exclusion_reason": row["exclusion_reason"],
             }
         )
     return pd.DataFrame(records)
@@ -236,15 +233,13 @@ def run_feature_pipeline(
     features_dir.mkdir(parents=True, exist_ok=True)
 
     manifest_path = raw_dir / "MANIFEST.json"
-    manifest = (
-        json.loads(manifest_path.read_text(encoding="utf-8"))
-        if manifest_path.exists()
-        else {"data_version": "unknown", "max_complete_valuation_date": "2026-06-12"}
-    )
-    data_version = str(manifest.get("data_version", "unknown"))
-    max_val_date = str(manifest.get("max_complete_valuation_date", "2026-06-12"))
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"{manifest_path} missing; run ingestion first")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    data_version = str(manifest["data_version"])
+    max_val_date = str(manifest["max_complete_valuation_date"])
 
-    clean_tables = load_clean_tables(clean_dir)
+    clean_tables = load_clean_tables(clean_dir, raw_dir)
 
     # 1. Fit Empirical Bayes priors & fallback league medians strictly on train (< 2023-07-01)
     priors = compute_empirical_bayes_priors(
@@ -275,6 +270,7 @@ def run_feature_pipeline(
         valuations_df=clean_tables["valuations"],
         all_valuations_df=clean_tables["all_valuations"],
         priors=priors,
+        injury_coverage_df=clean_tables["injury_coverage"],
     )
     snapshots_df["data_version"] = data_version
     snapshots_out = features_dir / "valuation_snapshots.parquet"
@@ -286,11 +282,19 @@ def run_feature_pipeline(
         raw_dir=raw_dir,
         max_complete_val_date=max_val_date,
     )
-    serving_df = compute_serving_features_for_requests(
+    serving_candidates_df = compute_serving_features_for_requests(
         active_requests_df,
         clean_tables=clean_tables,
         priors=priors,
         data_version=data_version,
+    )
+    serving_exclusions = (
+        serving_candidates_df["exclusion_reason"].dropna().value_counts().to_dict()
+    )
+    serving_df = (
+        serving_candidates_df[serving_candidates_df["exclusion_reason"].isna()]
+        .drop(columns=["exclusion_reason"])
+        .reset_index(drop=True)
     )
     serving_out = features_dir / "current_serving_features.parquet"
     serving_df.to_parquet(serving_out, index=False, compression="zstd")
@@ -299,11 +303,17 @@ def run_feature_pipeline(
         snapshots_df.groupby(["split", "league_code"]).size().unstack(fill_value=0).to_dict(orient="index")
     )
     serving_league_counts = serving_df["league_code"].value_counts().to_dict()
+    population_df = snapshots_df[snapshots_df["in_model_population"]]
+    population_counts = population_df["split"].value_counts().to_dict()
+    exclusion_counts = (
+        snapshots_df.groupby(["split", "exclusion_reason"]).size().unstack(fill_value=0)
+        .to_dict(orient="index")
+    )
 
     feature_manifest = {
         "data_version": data_version,
         "generated_at": datetime.now(UTC).isoformat(),
-        "total_valuation_snapshots": int(len(snapshots_df)),
+        "total_valuation_snapshots": len(snapshots_df),
         "snapshot_counts_by_split": {
             split: {
                 "total": int(sum(lg_counts.values())),
@@ -312,10 +322,23 @@ def run_feature_pipeline(
             }
             for split, lg_counts in split_counts.items()
         },
+        "model_population_rule": {
+            "supported_leagues": list(SUPPORTED_LEAGUES),
+            "min_tracked_minutes_prior_365d": POPULATION_MIN_TRACKED_MINUTES_12M,
+        },
+        "model_population_counts_by_split": {
+            split: int(population_counts.get(split, 0))
+            for split in ("train", "val_tune", "val_calib", "test")
+        },
+        "excluded_snapshot_counts_by_split": {
+            split: {reason: int(n) for reason, n in reasons.items()}
+            for split, reasons in exclusion_counts.items()
+        },
         "active_serving_scope": {
-            "total": int(len(serving_df)),
+            "total": len(serving_df),
             "GB1": int(serving_league_counts.get("GB1", 0)),
             "EC1": int(serving_league_counts.get("EC1", 0)),
+            "excluded_candidates": {k: int(v) for k, v in serving_exclusions.items()},
         },
         "main_model_categorical_features": MAIN_MODEL_CATEGORICAL_FEATURES,
         "main_model_numeric_features": MAIN_MODEL_NUMERIC_FEATURES,

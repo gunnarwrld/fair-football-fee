@@ -39,8 +39,18 @@ def test_empirical_bayes_priors_ignore_post_train_cutoff_data() -> None:
     )
     vals_train = pd.DataFrame(
         [
-            {"league_at_valuation": "GB1", "valuation_date": date(2022, 6, 1), "market_value_eur": 10_000_000},
-            {"league_at_valuation": "EC1", "valuation_date": date(2022, 6, 1), "market_value_eur": 500_000},
+            {
+                "tm_player_id": 1,
+                "league_at_valuation": "GB1",
+                "valuation_date": date(2022, 6, 1),
+                "market_value_eur": 10_000_000,
+            },
+            {
+                "tm_player_id": 2,
+                "league_at_valuation": "EC1",
+                "valuation_date": date(2022, 6, 1),
+                "market_value_eur": 500_000,
+            },
         ]
     )
 
@@ -65,7 +75,14 @@ def test_empirical_bayes_priors_ignore_post_train_cutoff_data() -> None:
         [
             vals_train,
             pd.DataFrame(
-                [{"league_at_valuation": "GB1", "valuation_date": date(2024, 6, 1), "market_value_eur": 999_000_000}]
+                [
+                    {
+                        "tm_player_id": 1,
+                        "league_at_valuation": "GB1",
+                        "valuation_date": date(2024, 6, 1),
+                        "market_value_eur": 999_000_000,
+                    }
+                ]
             ),
         ],
         ignore_index=True,
@@ -79,6 +96,10 @@ def test_empirical_bayes_priors_ignore_post_train_cutoff_data() -> None:
     )
 
     assert priors_base.to_dict() == priors_after.to_dict()
+    # Both train valuations have >= 450 tracked minutes in the prior 365 days, so they
+    # define the population-based fallback league medians.
+    assert priors_base.train_league_median_eur["GB1"] == 10_000_000.0
+    assert priors_base.train_league_median_eur["EC1"] == 500_000.0
 
 
 def test_ec1_snapshot_without_match_appearances_sets_match_rolling_to_nan() -> None:
@@ -212,6 +233,8 @@ def test_ec1_snapshot_without_match_appearances_sets_match_rolling_to_nan() -> N
     assert row["prior_season_minutes"] == 2340.0
     assert row["prior_season_goals"] == 4.0
     assert row["prior_season_goals_per90_shrunk"] > 0.0
+    assert row["exclusion_reason"] == "league_not_supported"
+    assert not bool(row["in_model_population"])
 
 
 @pytest.mark.data
@@ -235,9 +258,22 @@ def test_feature_artifacts_and_serving_scope_invariants() -> None:
     for col in MAIN_MODEL_FEATURES:
         assert col in snapshots_df.columns, f"Missing feature column {col} in valuation_snapshots.parquet"
 
-    # Active serving scope invariants: 525 GB1 + 11 EC1 = 536 total
+    # Phase 2.1 modeling population: GB1 only, no EC1 rows inside it
+    pop = snapshots_df[snapshots_df["in_model_population"]]
+    assert (pop["league_code"] == "GB1").all()
+    assert (pop["mins_last_12m"] >= 450).all()
+    assert snapshots_df.loc[snapshots_df["league_code"] == "EC1", "exclusion_reason"].eq(
+        "league_not_supported"
+    ).all()
+    for split in ("train", "val_tune", "val_calib", "test"):
+        assert manifest["model_population_counts_by_split"][split] == int((pop["split"] == split).sum())
+
+    # Active serving scope invariants: Premier League only, inside the modeling population
     assert len(serving_df) == manifest["active_serving_scope"]["total"]
-    assert manifest["active_serving_scope"]["GB1"] > 500
-    assert 0 < manifest["active_serving_scope"]["EC1"] < 25
+    assert manifest["active_serving_scope"]["GB1"] > 300
+    assert manifest["active_serving_scope"]["EC1"] == 0
+    assert (serving_df["league_code"] == "GB1").all()
     assert (serving_df["trailing_league_median_eur"] > 0).all()
     assert serving_df["tm_player_id"].is_unique
+    serving_minutes = serving_df["features_json"].map(lambda s: json.loads(s)["mins_last_12m"])
+    assert (serving_minutes >= 450).all()
