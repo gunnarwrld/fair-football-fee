@@ -19,7 +19,7 @@ from src.ml.metrics import AGE_BANDS, band
 SEED = 42
 
 
-def _load_native(module: str) -> ModuleType:
+def load_native(module: str) -> ModuleType:
     """Import XGBoost/LightGBM lazily, so baselines and tests don't need their native libraries.
 
     Both ship macOS wheels linked against the OpenMP runtime, which macOS doesn't include.
@@ -79,7 +79,7 @@ def make_ridge(numeric: list[str], categorical: list[str]) -> Pipeline:
 
 
 def make_lightgbm() -> Any:
-    lgb = _load_native("lightgbm")
+    lgb = load_native("lightgbm")
     return lgb.LGBMRegressor(
         n_estimators=500, learning_rate=0.05, num_leaves=31, subsample=0.8, subsample_freq=1,
         colsample_bytree=0.8, random_state=SEED, n_jobs=4, verbose=-1,
@@ -87,7 +87,7 @@ def make_lightgbm() -> Any:
 
 
 def make_xgb(params: dict[str, Any], **overrides: Any) -> Any:
-    xgb = _load_native("xgboost")
+    xgb = load_native("xgboost")
     cfg = {
         "tree_method": "hist",
         "enable_categorical": True,
