@@ -262,9 +262,9 @@ def engineer_features_for_snapshots(
 ) -> pd.DataFrame:
     """Compute point-in-time features strictly from records dated `< as_of_date`.
 
-    `injury_coverage_df` lists the `tm_player_id`s present in the injury source. Players
-    outside it get NULL injury features instead of a misleading zero. When omitted, every
-    player in `players_df` is treated as covered.
+    `injury_coverage_df` lists the `tm_player_id`s present in the injury profile source.
+    Injury records also establish coverage on their own, including for players absent from
+    that profile list. Players with no profile or injury record get NULL injury features.
 
     Required columns in `snapshots_df`:
       - `tm_player_id` (int)
@@ -324,10 +324,13 @@ def engineer_features_for_snapshots(
     min_pop_minutes = int(POPULATION_MIN_TRACKED_MINUTES_12M)
     supported_leagues_sql = _sql_in_list(SUPPORTED_LEAGUES)
 
-    if injury_coverage_df is None:
-        injury_coverage_df = players_df[["tm_player_id"]]
+    coverage_sources = [
+        (players_df if injury_coverage_df is None else injury_coverage_df)[["tm_player_id"]]
+    ]
+    if "tm_player_id" in injuries_df.columns:
+        coverage_sources.append(injuries_df[["tm_player_id"]])
     coverage_df = (
-        injury_coverage_df[["tm_player_id"]]
+        pd.concat(coverage_sources, ignore_index=True)
         .dropna()
         .astype({"tm_player_id": "int64"})
         .drop_duplicates()
