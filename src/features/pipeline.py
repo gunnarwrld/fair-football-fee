@@ -54,9 +54,11 @@ def load_clean_tables(
 ) -> dict[str, pd.DataFrame]:
     clean_dir = clean_dir or settings.clean_data_dir
     raw_dir = raw_dir or settings.raw_data_dir
+    profile_coverage = pd.read_parquet(raw_dir / "salimt_profiles.parquet", columns=["player_id"])
+    profile_coverage = profile_coverage.rename(columns={"player_id": "tm_player_id"})
+    injuries = pd.read_parquet(clean_dir / "injuries.parquet")
     injury_coverage = (
-        pd.read_parquet(raw_dir / "salimt_profiles.parquet", columns=["player_id"])
-        .rename(columns={"player_id": "tm_player_id"})
+        pd.concat([profile_coverage[["tm_player_id"]], injuries[["tm_player_id"]]], ignore_index=True)
         .dropna()
         .astype({"tm_player_id": "int64"})
         .drop_duplicates()
@@ -68,8 +70,8 @@ def load_clean_tables(
         "appearances": pd.read_parquet(clean_dir / "appearances.parquet"),
         "player_seasons": pd.read_parquet(clean_dir / "player_seasons.parquet"),
         "transfers": pd.read_parquet(clean_dir / "transfers.parquet"),
-        "injuries": pd.read_parquet(clean_dir / "injuries.parquet"),
-        # Players present in the injury source (salimt profiles); others get NULL injury features
+        "injuries": injuries,
+        # Profile coverage plus any players evidenced directly by injury records.
         "injury_coverage": injury_coverage,
     }
 
