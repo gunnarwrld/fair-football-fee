@@ -386,6 +386,13 @@ def test_invalid_what_if_payloads_are_422(api: Any, payload: dict[str, Any]) -> 
     assert api.client.post("/v1/valuations", json=payload).status_code == 422
 
 
+def test_request_validation_errors_use_the_unified_error_envelope(api: Any) -> None:
+    expected = {"detail": {"code": "validation_error", "message": "request validation failed"}}
+    assert api.client.post("/v1/valuations", json={"player_id": 1, "scenario": {}}).json() == expected
+    assert api.client.get("/v1/players", params={"q": "x"}).json() == expected
+    assert api.client.get("/v1/players/0/valuation").json() == expected
+
+
 def test_inconsistent_scenario_explains_itself(api: Any) -> None:
     r = api.client.post("/v1/valuations", json={"player_id": 1, "scenario": {"minutes_last_12m": 5000, "appearances_last_12m": 10}})
     assert r.status_code == 422 and r.json()["detail"]["code"] == "invalid_scenario"
@@ -399,6 +406,16 @@ def test_what_if_is_rate_limited_per_client(api: Any) -> None:
     r = api.client.post("/v1/valuations", json=payload)
     assert r.json()["detail"]["code"] == "rate_limited" and 0 < int(r.headers["Retry-After"]) <= 60
     assert api.client.get("/v1/players/1/valuation").status_code == 200  # GETs are not limited
+
+
+def test_retry_after_is_exposed_to_browser_clients(api: Any) -> None:
+    payload = {"player_id": 1, "scenario": {"goals_last_12m": 5}}
+    headers = {"Origin": "http://localhost:3000"}
+    responses = [api.client.post("/v1/valuations", json=payload, headers=headers) for _ in range(6)]
+    limited = responses[-1]
+    assert limited.status_code == 429
+    assert int(limited.headers["Retry-After"]) > 0
+    assert "retry-after" in limited.headers["Access-Control-Expose-Headers"].lower()
 
 
 def test_a_new_model_version_never_reads_old_cache_entries(api: Any, fake_predictor: Predictor) -> None:
@@ -484,6 +501,8 @@ def test_real_api_matches_the_offline_phase4_estimate() -> None:
 def test_real_api_values_a_player_without_injury_history() -> None:
     from sqlalchemy import text
 
+    if not (ARTIFACT_DIR / "model.ubj").exists():
+        pytest.skip("Model artifacts not present on clean clone")
     engine = _db_engine()
     with engine.connect() as conn:
         player_id = conn.execute(text(

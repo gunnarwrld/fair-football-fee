@@ -14,6 +14,7 @@ from src.api.cache import CacheStatus
 from src.api.deps import CacheDep, LogWriterDep, RepoDep, ServableStateDep, StateDep, rate_limit
 from src.api.runtime import ServingState
 from src.api.schemas import (
+    ErrorOut,
     HealthOut,
     ModelOut,
     PlayerHitOut,
@@ -98,7 +99,7 @@ def model_info(state: StateDep) -> ModelOut:
     )
 
 
-@router.get("/players", response_model=PlayerSearchOut)
+@router.get("/players", response_model=PlayerSearchOut, responses={422: {"model": ErrorOut}})
 def search_players(
     repo: RepoDep,
     q: Annotated[str, Query(min_length=2, max_length=100, description="Part of a name; accents and case are ignored")],
@@ -109,7 +110,7 @@ def search_players(
     return PlayerSearchOut(query=q, results=[PlayerHitOut(**asdict(h)) for h in hits])
 
 
-@router.get("/players/{player_id}/valuation", response_model=ValuationOut)
+@router.get("/players/{player_id}/valuation", response_model=ValuationOut, responses={422: {"model": ErrorOut}})
 def player_valuation(
     player_id: Annotated[int, Path(ge=1)],
     request: Request,
@@ -132,7 +133,9 @@ def player_valuation(
     return out
 
 
-@router.post("/valuations", response_model=WhatIfOut, dependencies=[Depends(rate_limit)])
+@router.post(
+    "/valuations", response_model=WhatIfOut, dependencies=[Depends(rate_limit)], responses={422: {"model": ErrorOut}}
+)
 def what_if(
     body: WhatIfIn,
     request: Request,

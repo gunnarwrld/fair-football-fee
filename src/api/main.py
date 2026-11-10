@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -60,7 +61,7 @@ def create_app(
         allow_origins=settings.cors_origins,
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type", "X-Request-ID"],
-        expose_headers=["X-Cache", "X-Request-ID"],
+        expose_headers=["X-Cache", "X-Request-ID", "Retry-After"],
     )
 
     @app.middleware("http")
@@ -74,6 +75,13 @@ def create_app(
     @app.exception_handler(ApiError)
     async def api_error(request: Request, exc: ApiError) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content={"detail": {"code": exc.code, "message": exc.message}})
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": {"code": "validation_error", "message": "request validation failed"}},
+        )
 
     app.include_router(router, prefix=settings.api_v1_prefix)
     return app
