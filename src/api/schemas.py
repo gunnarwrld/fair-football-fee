@@ -125,6 +125,15 @@ class WhatIfOut(ValuationOut):
     changes: list[FeatureChangeOut]
 
 
+class ErrorDetailOut(BaseModel):
+    code: str
+    message: str
+
+
+class ErrorOut(BaseModel):
+    detail: ErrorDetailOut
+
+
 class HealthOut(BaseModel):
     status: str = Field(description="ok, degraded (Redis down, still serving) or unavailable")
     database: bool
