@@ -1,6 +1,7 @@
 "use client";
 
 import { formatDate, formatPct } from "@/lib/format";
+import { displayCoverageForLevel, type CoverageSummary } from "@/lib/model-display";
 import { useModel } from "@/lib/hooks";
 
 // Shapes of the free-form `test_metrics` and `recentering` objects in GET /v1/model
@@ -8,11 +9,6 @@ interface PointMetrics {
   n: number;
   mdape: number;
   within_25pct: number;
-}
-interface Coverage {
-  coverage: number;
-  ci: { ci_low: number; ci_high: number };
-  median_factor: number;
 }
 interface SourceBatch {
   start: string;
@@ -29,7 +25,8 @@ export function ModelDetails() {
 
   const point = m.test_metrics.point as PointMetrics | undefined;
   const unadjusted = m.test_metrics.point_without_recentering as PointMetrics | undefined;
-  const coverage = m.test_metrics.coverage as Record<string, Coverage> | undefined;
+  const coverage = m.test_metrics.coverage as Record<string, CoverageSummary> | undefined;
+  const displayedCoverage = displayCoverageForLevel(coverage, m.display_level);
   const offset = Number(m.recentering.offset ?? 0);
   const batch = m.recentering.source_batch as SourceBatch | null | undefined;
 
@@ -47,17 +44,14 @@ export function ModelDetails() {
             detail={`median absolute % error on ${point.n.toLocaleString("en-GB")} valuations${unadjusted ? ` (${pct(unadjusted.mdape)} without the update-round adjustment)` : ""}`}
           />
         )}
-        {coverage &&
-          Object.entries(coverage)
-            .slice(0, 1)
-            .map(([level, c]) => (
-              <Tile
-                key={level}
-                label={`${Math.round(Number(level) * 100)}% range covers`}
-                value={pct(c.coverage)}
-                detail={`of real values (95% CI ${pct(c.ci.ci_low)}–${pct(c.ci.ci_high)}); typical width ×/÷ ${c.median_factor.toFixed(2)}`}
-              />
-            ))}
+        {displayedCoverage && (
+          <Tile
+            key={displayedCoverage.level}
+            label={`${Math.round(Number(displayedCoverage.level) * 100)}% range covers`}
+            value={pct(displayedCoverage.coverage.coverage)}
+            detail={`of real values (95% CI ${pct(displayedCoverage.coverage.ci.ci_low)}–${pct(displayedCoverage.coverage.ci.ci_high)}); typical width ×/÷ ${displayedCoverage.coverage.median_factor.toFixed(2)}`}
+          />
+        )}
       </dl>
       <p className="text-sm text-ink-2">
         Interval method: {m.interval_method}. The latest Transfermarkt update round adjusts every estimate by{" "}

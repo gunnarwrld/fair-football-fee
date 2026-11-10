@@ -148,6 +148,17 @@ export interface components {
              */
             effect_pct: number;
         };
+        /** ErrorDetailOut */
+        ErrorDetailOut: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /** ErrorOut */
+        ErrorOut: {
+            detail: components["schemas"]["ErrorDetailOut"];
+        };
         /** FeatureChangeOut */
         FeatureChangeOut: {
             /** Feature */
@@ -156,11 +167,6 @@ export interface components {
             before: number | null;
             /** After */
             after: number | null;
-        };
-        /** HTTPValidationError */
-        HTTPValidationError: {
-            /** Detail */
-            detail?: components["schemas"]["ValidationError"][];
         };
         /** HealthOut */
         HealthOut: {
@@ -312,19 +318,6 @@ export interface components {
             goals_last_12m?: number | null;
             /** Assists Last 12M */
             assists_last_12m?: number | null;
-        };
-        /** ValidationError */
-        ValidationError: {
-            /** Location */
-            loc: (string | number)[];
-            /** Message */
-            msg: string;
-            /** Error Type */
-            type: string;
-            /** Input */
-            input?: unknown;
-            /** Context */
-            ctx?: Record<string, never>;
         };
         /** ValuationOut */
         ValuationOut: {
@@ -499,13 +492,13 @@ export interface operations {
                     "application/json": components["schemas"]["PlayerSearchOut"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Entity */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorOut"];
                 };
             };
         };
@@ -530,13 +523,13 @@ export interface operations {
                     "application/json": components["schemas"]["ValuationOut"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Entity */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorOut"];
                 };
             };
         };
@@ -563,13 +556,13 @@ export interface operations {
                     "application/json": components["schemas"]["WhatIfOut"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Entity */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorOut"];
                 };
             };
         };
