@@ -59,6 +59,8 @@
 
 ## 5. Leakage Prevention, Inflation Normalization, SHAP & Conformal Uncertainty
 
+> **Phase 2.1 amendment (supersedes the EC1 and serving-scope details below):** training, evaluation and serving are restricted to `GB1` snapshots with ≥ 450 tracked minutes in the prior 365 days and a match-verified club. The trailing league median is computed on that population, and `EC1` is out of scope. See [`phase2_1_population_findings.md`](phase2_1_population_findings.md).
+
 1. **Point-in-Time Feature Engineering & Leakage Guardrails (Phase 2 Spec)**:
    - **`player_seasons` is Display-Only**: Because `player_seasons` aggregates whole seasons (including matches played *after* a mid-season valuation date $t$), feature engineering in `src/features/` never reads `player_seasons`. All rolling 12m/24m match-level features (`mins_last_12m`, `goals_per90_shrunk_12m`, `assists_per90_shrunk_12m`, `cards_per90_12m`, `clean_sheets_per90_12m`, `goals_conceded_per90_12m`, `starts_ratio_12m`, `availability_ratio_12m`) are computed strictly from match-level `data/clean/appearances.parquet` filtered by `match_date < valuation_date`.
    - **Common-Granularity Prior-Season Features + Match-Level Indicator**: Because `EC1` domestic appearances (`data/raw/ec1_performances.parquet`) exist only as seasonal aggregates (`season_end_date < valuation_date`), Phase 2 defines two distinct feature groups to prevent train/serve granularity skew:
