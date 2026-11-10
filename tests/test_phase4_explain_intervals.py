@@ -25,8 +25,15 @@ from src.ml.explain import (
     shap_contributions,
     top_drivers,
 )
+from src.ml.report_phase4 import _bin_ranges
 
 ARTIFACT_DIR = Path("artifacts/v1.0.0")
+
+
+def test_bin_ranges_support_global_fallback_without_edges() -> None:
+    assert _bin_ranges([]) == ["all predictions"]
+    assert len(_bin_ranges([])) == 1  # one global bin in the calibration/test tables
+    assert len(_bin_ranges([-0.5, 0.5])) == 3
 
 
 def test_conformal_quantile_uses_finite_sample_rank() -> None:
