@@ -107,6 +107,7 @@ def _run(
     transfers: list[dict] | None = None,
     valuations: list[dict] | None = None,
     injury_coverage: list[int] | None = None,
+    injuries: list[dict] | None = None,
 ) -> pd.DataFrame:
     player_ids = sorted({s["tm_player_id"] for s in snaps} | {a["tm_player_id"] for a in apps})
     vals_df = _frame(valuations or [], VALUATION_COLUMNS)
@@ -115,7 +116,7 @@ def _run(
         players_df=pd.DataFrame([_player(pid) for pid in player_ids]),
         appearances_df=_frame(apps, APP_COLUMNS),
         player_seasons_df=_frame([], SEASON_COLUMNS),
-        injuries_df=_frame([], INJURY_COLUMNS),
+        injuries_df=_frame(injuries or [], INJURY_COLUMNS),
         transfers_df=_frame(transfers or [], TRANSFER_COLUMNS),
         valuations_df=vals_df,
         all_valuations_df=vals_df,
@@ -192,6 +193,22 @@ def test_injury_features_null_when_player_not_in_injury_source() -> None:
     assert out.loc[8, "in_injury_source"] == 0.0
     assert pd.isna(out.loc[8, "injury_days_12m"])
     assert pd.isna(out.loc[8, "days_since_last_injury_end_capped"])
+
+
+def test_injury_rows_establish_coverage_without_a_profile_record() -> None:
+    out = _run(
+        [_snap(1), _snap(8)],
+        apps=_apps(1, CLUB_A, 10) + _apps(8, CLUB_A, 10),
+        injury_coverage=[1],
+        injuries=[{
+            "tm_player_id": 8, "season_name": "2023/24", "injury_reason": "muscle injury",
+            "from_date": date(2024, 2, 1), "end_date": date(2024, 2, 15),
+            "days_missed": 14, "games_missed": 2,
+        }],
+    )
+    assert out.loc[8, "in_injury_source"] == 1.0
+    assert out.loc[8, "injury_days_12m"] == 14.0
+    assert out.loc[8, "injury_count_12m"] == 1
 
 
 def _population() -> pd.DataFrame:

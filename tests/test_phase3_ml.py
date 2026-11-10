@@ -98,10 +98,11 @@ def test_saved_model_reproduces_reported_test_metrics() -> None:
 @pytest.mark.data
 def test_final_model_never_trained_on_calibration_or_test_rows() -> None:
     meta_path = ARTIFACT_DIR / "metadata.json"
-    if not meta_path.exists():
-        pytest.skip("Model artifacts not present on clean clone")
+    predictions_path = ARTIFACT_DIR / "predictions.parquet"
+    if not meta_path.exists() or not predictions_path.exists():
+        pytest.skip("Required model prediction artifacts not present on clean clone")
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     assert meta["training_rows"]["train+val_tune"]["to"] < "2024-07-01"
     assert meta["evaluation_rows"]["val_calib"]["from"] >= "2024-07-01"
-    preds = pd.read_parquet(ARTIFACT_DIR / "predictions.parquet")
+    preds = pd.read_parquet(predictions_path)
     assert set(preds["split"]) == {"val_tune", "val_calib", "test"}
