@@ -4,6 +4,7 @@ import { useId, useMemo, useState } from "react";
 
 import { ApiError, type InputName, type Inputs, type Scenario, type Valuation } from "@/lib/api";
 import { formatEur, formatPct, formatValue } from "@/lib/format";
+import { modelBoundsErrorMessage } from "@/lib/model-display";
 import { useDebounced, useModel, useWhatIf } from "@/lib/hooks";
 
 const CONTROLS: { name: InputName; label: string; step: number }[] = [
@@ -37,7 +38,7 @@ function toScenario(values: Values, start: Values): Scenario {
 
 export function WhatIfPanel({ current }: { current: Valuation }) {
   const baseId = useId();
-  const { data: model } = useModel();
+  const { data: model, error: modelError } = useModel();
   const start = useMemo(() => startValues(current.inputs), [current.inputs]);
   const [values, setValues] = useState<Values>(start);
   const scenario = useMemo(() => toScenario(values, start), [values, start]);
@@ -45,6 +46,7 @@ export function WhatIfPanel({ current }: { current: Valuation }) {
   const { data, error, isLoading } = useWhatIf(current.player.id, debounced);
   const active = Object.keys(debounced).length > 0;
   const bounds = model?.whatif_bounds;
+  const boundsError = !bounds && modelError ? modelBoundsErrorMessage(modelError) : undefined;
 
   return (
     <section aria-labelledby={`${baseId}-heading`} className="space-y-4 rounded-lg border border-border bg-surface p-4 sm:p-6">
@@ -68,6 +70,12 @@ export function WhatIfPanel({ current }: { current: Valuation }) {
         </button>
       </div>
 
+      {boundsError && (
+        <p role="alert" className="text-sm text-ink-2">
+          {boundsError}
+        </p>
+      )}
+
       <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
         {CONTROLS.map(({ name, label, step }) => {
           const id = `${baseId}-${name}`;
@@ -76,7 +84,7 @@ export function WhatIfPanel({ current }: { current: Valuation }) {
           if (value === undefined || !range) {
             return (
               <p key={name} className="text-sm text-ink-2">
-                {label}: {range ? "not available for this player" : "loading…"}
+                {label}: {range ? "not available for this player" : modelError ? "unavailable" : "loading…"}
               </p>
             );
           }
