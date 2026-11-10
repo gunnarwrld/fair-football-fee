@@ -53,6 +53,8 @@ def _factor(q: float) -> str:
 
 def _bin_ranges(edges: list[float]) -> list[str]:
     """Predicted value relative to the league median for each bin, e.g. '0.59–1.13 × median'."""
+    if not edges:
+        return ["all predictions"]
     bounds = [None, *np.exp(edges).tolist(), None]
     out = []
     for lo, hi in itertools.pairwise(bounds):
