@@ -76,19 +76,40 @@ def block_bootstrap_diff(
     Rows of the same player are correlated (several valuations per season), so resampling
     rows would understate uncertainty.
     """
-    ids = np.asarray(player_ids)
     a, b = np.asarray(values_a, dtype=float), np.asarray(values_b, dtype=float)
-    uniq, inverse = np.unique(ids, return_inverse=True)
-    rows_by_player = [np.flatnonzero(inverse == k) for k in range(len(uniq))]
-    rng = np.random.default_rng(seed)
-    diffs = np.empty(n_boot)
-    for i in range(n_boot):
-        pick = rng.integers(0, len(uniq), size=len(uniq))
-        idx = np.concatenate([rows_by_player[k] for k in pick])
-        diffs[i] = stat(a[idx]) - stat(b[idx])
+    n_groups, samples = _block_resamples(player_ids, n_boot, seed)
+    diffs = np.array([stat(a[idx]) - stat(b[idx]) for idx in samples])
     return {
         "diff": float(stat(a) - stat(b)),
         "ci_low": float(np.percentile(diffs, 2.5)),
         "ci_high": float(np.percentile(diffs, 97.5)),
-        "n_players": len(uniq),
+        "n_players": n_groups,
     }
+
+
+def block_bootstrap_ci(
+    group_ids: np.ndarray, values: np.ndarray, stat: Callable[[np.ndarray], float] = np.mean,
+    n_boot: int = 1000, seed: int = 42,
+) -> dict[str, float]:
+    """Bootstrap CI of stat(values), resampling whole groups (e.g. players for coverage)."""
+    v = np.asarray(values, dtype=float)
+    n_groups, samples = _block_resamples(group_ids, n_boot, seed)
+    stats = np.array([stat(v[idx]) for idx in samples])
+    return {
+        "value": float(stat(v)),
+        "ci_low": float(np.percentile(stats, 2.5)),
+        "ci_high": float(np.percentile(stats, 97.5)),
+        "n_groups": n_groups,
+    }
+
+
+def _block_resamples(group_ids: np.ndarray, n_boot: int, seed: int) -> tuple[int, list[np.ndarray]]:
+    """Row indices of `n_boot` resamples that draw whole groups with replacement."""
+    uniq, inverse = np.unique(np.asarray(group_ids), return_inverse=True)
+    rows_by_group = [np.flatnonzero(inverse == k) for k in range(len(uniq))]
+    rng = np.random.default_rng(seed)
+    samples = []
+    for _ in range(n_boot):
+        pick = rng.integers(0, len(uniq), size=len(uniq))
+        samples.append(np.concatenate([rows_by_group[k] for k in pick]))
+    return len(uniq), samples

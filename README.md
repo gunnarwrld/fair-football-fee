@@ -11,14 +11,15 @@ The model covers **Premier League players with at least 450 tracked minutes in t
 > **Status: work in progress.** Merged on `main`: the data audit, raw ingestion to Parquet, cleaning, and point-in-time feature engineering (phases 0–2), with tests for leakage and each phase. Still in open pull requests, not on `main`: the modelling population (#2), tuned models and evaluation (#3), explanations and conformal intervals (#5), the FastAPI service (#6), the Next.js frontend (#7), and Docker/CI/load testing (#8). No model results are published yet.
 
 ## Stack
+- **Data & ML**: Python 3.12, DuckDB, PyArrow (Parquet Lakehouse), Pandas, Scikit-Learn, XGBoost, LightGBM, Optuna, TreeSHAP, Split Conformal Prediction
+- **Backend & Caching**: FastAPI, SQLAlchemy 2.0 + Alembic, PostgreSQL 16 (6 operational serving tables), Redis 7 (cache-aside with stampede lock and graceful fallback)
+- **Frontend**: Next.js (App Router)
 
-Merged on `main`:
-- **Data**: Python 3.11+, DuckDB, PyArrow (Parquet), Pandas
-- **Storage**: PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (serving schema), Redis 7 (in `docker-compose.yml`)
-
-Planned in open pull requests:
-- **ML**: Scikit-Learn, XGBoost, LightGBM, Optuna, TreeSHAP, split conformal prediction
-- **API and UI**: FastAPI with Redis cache-aside, Next.js (App Router)
+## Reports
+- [Phase 3 evaluation](reports/phase3_evaluation.md): baselines, tuned XGBoost, error slices, secondary experiments.
+- [Phase 4 explanations and intervals](reports/phase4_explain_intervals.md): TreeSHAP drivers, update-round recentering, conformal prediction intervals and their coverage.
+- [Model card for v1.0.0](reports/model_card_v1.0.0.md): intended use, data, performance, limitations.
+- Decision history and the reasons behind each choice: [`docs/PROJECT_LOG.md`](docs/PROJECT_LOG.md).
 
 ## Data and licensing
 
@@ -29,7 +30,7 @@ Raw data is downloaded at run time and is **not** committed. Sources, pinned ver
 
 The plan for phases and data is in [`docs/phase0_architecture_and_data_plan.md`](docs/phase0_architecture_and_data_plan.md).
 
-## Run the merged pipeline
+## Run the data pipeline (phases 0–2)
 
 You need Python 3.11 or newer and Docker.
 
@@ -54,7 +55,7 @@ Settings come from environment variables or a `.env` file (see `src/config.py`).
 pytest
 ```
 
-The suite covers the phase 0 schema, phase 1 ingestion and cleaning, phase 2 features, and checks that no feature uses data from after the valuation date. Without downloaded data, 17 tests pass and 7 that need the data files are skipped.
+The suite covers the phase 0 schema, ingestion and cleaning, point-in-time features, model evaluation and interval behavior. Tests requiring gitignored Parquet artifacts are marked `data` and are skipped when those files are unavailable.
 
 ## License
 
