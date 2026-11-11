@@ -30,24 +30,28 @@ Raw data is downloaded at run time and is **not** committed. Sources, pinned ver
 
 The plan for phases and data is in [`docs/phase0_architecture_and_data_plan.md`](docs/phase0_architecture_and_data_plan.md).
 
-## Run the data pipeline (phases 0–2)
+## Run it locally
 
-You need Python 3.11 or newer and Docker.
+Needs Python 3.12, Docker Desktop and, on macOS, `brew install libomp` (`make doctor` checks all three).
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-
-docker compose up -d                # PostgreSQL 16 and Redis 7 on localhost
-alembic upgrade head                # serving tables
-
-python scripts/audit_datasets.py    # downloads missing pinned sources, checks SHA-256, writes the audit report
-python -m src.data.ingest           # raw CSV -> typed Parquet in data/raw/ + MANIFEST.json
-python -m src.data.clean            # add --load-db to upsert clean tables into PostgreSQL
-python -m src.features.pipeline     # point-in-time features; add --load-db to fill player_current_features
+make pipeline    # download pinned sources → clean → point-in-time features
+make train       # Phase 3 model (reuses the committed tuning)
+make calibrate   # Phase 4 intervals, recentering, report + model card
+make db          # Postgres + Redis in Docker, migrations, serving tables
+make register    # mark the model active in model_versions
+make api         # http://localhost:8000/docs
 ```
 
-Settings come from environment variables or a `.env` file (see `src/config.py`). The defaults match `docker-compose.yml`.
+| Endpoint | What it returns |
+|---|---|
+| `GET /v1/players?q=haaland` | Players matching a name, with `has_valuation` |
+| `GET /v1/players/{id}/valuation` | Estimate, 80% and 90% intervals, Transfermarkt value, top SHAP drivers |
+| `POST /v1/valuations` | The same for a what-if scenario, plus the change vs today |
+| `GET /v1/model` | Active model, interval method, test metrics |
+| `GET /v1/health` | Database, Redis and model status |
+
+Valuations are cached in Redis (`X-Cache: HIT/MISS/BYPASS`); if Redis is down the API keeps answering, uncached.
 
 ## Tests
 

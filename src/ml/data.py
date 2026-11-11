@@ -37,12 +37,19 @@ def category_levels(df: pd.DataFrame) -> dict[str, list[str]]:
 
 
 def feature_frame(df: pd.DataFrame, features: list[str], levels: dict[str, list[str]]) -> pd.DataFrame:
-    """Select model features and apply fixed categorical levels (unknown levels become NaN)."""
+    """Select model features and apply fixed categorical levels (unknown levels become NaN).
+
+    Numeric columns that arrive as Python objects (a serving row built from JSON, where a missing
+    injury history is `null`) become numbers with NaN, which XGBoost treats as missing.
+    """
     X = df[features].copy()
     for col, cats in levels.items():
         if col in X.columns:
             values = X[col].astype("string")
             X[col] = pd.Categorical(values.where(values.isin(cats)), categories=cats)
+    for col in X.columns:
+        if col not in levels and pd.api.types.is_object_dtype(X[col]):
+            X[col] = pd.to_numeric(X[col])
     return X
 
 
