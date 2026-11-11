@@ -52,7 +52,8 @@ RepoDep = Annotated[Repository, Depends(get_repo)]
 
 def rate_limit(request: Request) -> None:
     limiter: RateLimiter = request.app.state.limiter
-    # The direct peer address: X-Forwarded-For is ignored because any client can forge it
+    # The connecting address. Uvicorn replaces it with the client named in X-Forwarded-For only when the
+    # connection comes from FORWARDED_ALLOW_IPS (a trusted proxy), so a client can't pick its own bucket
     allowed, retry_after = limiter.hit(request.client.host if request.client else "unknown")
     if not allowed:
         raise HTTPException(

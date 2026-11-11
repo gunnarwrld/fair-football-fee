@@ -1,3 +1,6 @@
+# Fixed project name, so the network is always fair-football-fee_default whatever the folder is called
+name: fair-football-fee
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -32,37 +35,63 @@ services:
       timeout: 3s
       retries: 10
 
+  # `make up`: the API and UI as containers (after `make db` and `make register` from the host)
   api:
     profiles: ["app"]
     build:
       context: .
       dockerfile: Dockerfile.api
+    image: fff-api
     container_name: fff-api
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-fff_user}:${POSTGRES_PASSWORD:-fff_pass}@postgres:5432/${POSTGRES_DB:-fair_football_fee}
       REDIS_URL: redis://redis:6379/0
+      WEB_CONCURRENCY: ${API_WORKERS:-2}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
+      MAX_CONCURRENT_REQUESTS: ${MAX_CONCURRENT_REQUESTS:-16}
+      # Proxies allowed to set X-Forwarded-For. Behind a reverse proxy, set this to its address, or
+      # the per-IP what-if limit sees every user as the proxy; anyone else's header is ignored.
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
+    volumes:
+      # model_versions.artifact_path is relative (artifacts/<version>/model.ubj), resolved from /app
+      - ./artifacts:/app/artifacts:ro
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
+        # Redis is an optimization, not a dependency (invariant 12): start without it if it's down
+        condition: service_started
+        required: false
 
   frontend:
     profiles: ["app"]
     build:
       context: ./frontend
-      dockerfile: Dockerfile
+      args:
+        # Baked into the browser bundle: the address the *browser* uses to reach the API
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/v1}
+    image: fff-frontend
     container_name: fff-frontend
     restart: unless-stopped
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/v1
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
       - api
+
+  # `make loadtest`: k6 inside the compose network, so it measures the API container, not Docker's
+  # port forwarding. Results go to reports/loadtest/ (owned by the user running make).
+  k6:
+    profiles: ["loadtest"]
+    image: grafana/k6:2.2.0
+    user: "${HOST_UID:-12345}:${HOST_GID:-12345}"
+    environment:
+      BASE_URL: http://api:8000/v1
+    volumes:
+      - ./loadtest:/scripts:ro
+      - ./reports/loadtest:/results
 
 volumes:
   pgdata:
